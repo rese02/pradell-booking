@@ -1,7 +1,8 @@
+
 export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation" | "Confirmed" | "Cancelled";
 
 export interface GuestSubmittedData {
-  id?: string; // Optional: could be the booking ID itself or a separate ID
+  id?: string; 
   fullName?: string;
   addressLine1?: string;
   addressLine2?: string;
@@ -10,36 +11,53 @@ export interface GuestSubmittedData {
   country?: string;
   email?: string;
   phone?: string;
-  documentUrls?: string[]; // Array of URLs to uploaded documents
+  documentUrls?: string[]; 
   specialRequests?: string;
-  submittedAt?: Date;
+  submittedAt?: Date | string; // Keep consistent with Booking dates
 }
 
 export interface Booking {
-  id: string; // Unique ID for the booking
+  id: string; 
   guestFirstName: string;
   guestLastName: string;
   price: number;
-  roomIdentifier: string; // e.g., "Room 101", "Suite Deluxe"
-  checkInDate?: Date | string; // Store as ISO string or Date
-  checkOutDate?: Date | string; // Store as ISO string or Date
-  bookingToken: string; // Unique token for the guest link
+  roomIdentifier: string; // This might be derived from zimmertyp or a specific assigned room number later
+  checkInDate?: Date | string; 
+  checkOutDate?: Date | string; 
+  bookingToken: string; 
   status: BookingStatus;
-  guestSubmittedData?: GuestSubmittedData; // Data submitted by the guest
-  createdAt: Date | string; // Store as ISO string or Date
-  updatedAt: Date | string; // Store as ISO string or Date
+  
+  // Fields from the new booking form
+  verpflegung?: string;
+  zimmertyp?: string;
+  erwachsene?: number;
+  kinder?: number;
+  kleinkinder?: number;
+  alterKinder?: string;
+  interneBemerkungen?: string;
+
+  guestSubmittedData?: GuestSubmittedData; 
+  createdAt: Date | string; 
+  updatedAt: Date | string; 
 }
 
-// For react-hook-form, typically you'd have separate schemas for creation/update
+// For react-hook-form used in CreateBookingDialog
 export interface CreateBookingFormData {
   guestFirstName: string;
   guestLastName: string;
   price: number;
-  roomIdentifier: string;
-  checkInDate?: string; // Dates as strings for form input
-  checkOutDate?: string;
+  checkInDate: string; // Dates as strings from form input for yyyy-MM-dd format
+  checkOutDate: string;
+  verpflegung: string;
+  zimmertyp: string;
+  erwachsene: number;
+  kinder?: number; // Optional if 0
+  kleinkinder?: number; // Optional if 0
+  alterKinder?: string;
+  interneBemerkungen?: string;
 }
 
+// For GuestBookingFormStepper (Step 1)
 export interface GuestBookingStep1FormData {
   fullName: string;
   email: string;
@@ -51,6 +69,9 @@ export interface GuestBookingStep1FormData {
   country: string;
 }
 
+// For GuestBookingFormStepper (Step 3)
 export interface GuestBookingStep3FormData {
   specialRequests?: string;
 }
+
+    

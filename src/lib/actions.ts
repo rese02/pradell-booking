@@ -1,3 +1,4 @@
+
 "use server";
 
 import { z } from "zod";
@@ -9,10 +10,26 @@ const createBookingSchema = z.object({
   guestFirstName: z.string().min(1, "Vorname ist erforderlich."),
   guestLastName: z.string().min(1, "Nachname ist erforderlich."),
   price: z.coerce.number().positive("Preis muss eine positive Zahl sein."),
-  roomIdentifier: z.string().min(1, "Zimmernummer/-auswahl ist erforderlich."),
-  checkInDate: z.string().optional(),
-  checkOutDate: z.string().optional(),
+  // roomIdentifier is removed, replaced by zimmertyp etc.
+  checkInDate: z.string().min(1, "Anreisedatum ist erforderlich."),
+  checkOutDate: z.string().min(1, "Abreisedatum ist erforderlich."),
+  verpflegung: z.string().min(1, "Verpflegung ist erforderlich."),
+  zimmertyp: z.string().min(1, "Zimmertyp ist erforderlich."),
+  erwachsene: z.coerce.number().int().min(0, "Anzahl Erwachsene muss positiv sein."), // Typically min 1 for a booking, but 0 might be allowed if only children
+  kinder: z.coerce.number().int().min(0, "Anzahl Kinder muss positiv sein."),
+  kleinkinder: z.coerce.number().int().min(0, "Anzahl Kleinkinder muss positiv sein."),
+  alterKinder: z.string().optional(),
+  interneBemerkungen: z.string().optional(),
+}).refine(data => {
+    if (data.checkInDate && data.checkOutDate) {
+        return new Date(data.checkOutDate) > new Date(data.checkInDate);
+    }
+    return true;
+}, {
+    message: "Abreisedatum muss nach dem Anreisedatum liegen.",
+    path: ["checkOutDate"], // or a general path if preferred
 });
+
 
 const guestPersonalDataSchema = z.object({
   fullName: z.string().min(1, "Vollständiger Name ist erforderlich."),
@@ -39,28 +56,46 @@ export async function createBookingAction(prevState: any, formData: FormData) {
   if (!validatedFields.success) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
-      message: "Fehler bei der Validierung.",
+      message: "Fehler bei der Validierung der Buchungsdaten.",
+      bookingToken: null,
     };
   }
 
-  const { guestFirstName, guestLastName, price, roomIdentifier, checkInDate, checkOutDate } = validatedFields.data;
+  const bookingData = validatedFields.data;
 
   try {
     // Simulate database operation
-    console.log("Creating booking:", { guestFirstName, guestLastName, price, roomIdentifier, checkInDate, checkOutDate });
+    console.log("Creating booking with new details:", bookingData);
     const bookingToken = Math.random().toString(36).substring(2, 15); // Generate mock token
     console.log("Generated booking token:", bookingToken);
     
     // In a real app, save to DB and get ID and token
-    // await db.bookings.create({ ...validatedFields.data, bookingToken, status: "Pending Guest Information" });
+    // await db.bookings.create({ 
+    //   guestFirstName: bookingData.guestFirstName,
+    //   guestLastName: bookingData.guestLastName,
+    //   price: bookingData.price,
+    //   checkInDate: new Date(bookingData.checkInDate),
+    //   checkOutDate: new Date(bookingData.checkOutDate),
+    //   bookingToken, 
+    //   status: "Pending Guest Information",
+    //   // Add other new fields like:
+    //   // verpflegung: bookingData.verpflegung,
+    //   // zimmertyp: bookingData.zimmertyp,
+    //   // erwachsene: bookingData.erwachsene,
+    //   // kinder: bookingData.kinder,
+    //   // kleinkinder: bookingData.kleinkinder,
+    //   // alterKinder: bookingData.alterKinder,
+    //   // interneBemerkungen: bookingData.interneBemerkungen,
+    //   // roomIdentifier: bookingData.zimmertyp, // Or a combination, or handle room assignment differently
+    // });
 
     revalidatePath("/admin/dashboard"); // Revalidate to show new booking
-    revalidatePath("/admin/bookings");
+    revalidatePath("/admin/bookings"); // Ensure the bookings list page is also revalidated
     
-    return { message: `Buchung für ${guestFirstName} ${guestLastName} erstellt. Token: ${bookingToken}`, bookingToken, errors: {} };
+    return { message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${bookingToken}`, bookingToken, errors: null };
   } catch (e) {
     console.error("Error creating booking:", e);
-    return { message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", errors: {} };
+    return { message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", errors: null, bookingToken: null };
   }
 }
 
@@ -71,6 +106,7 @@ export async function submitGuestPersonalDataAction(bookingToken: string, prevSt
     return {
       errors: validatedFields.error.flatten().fieldErrors,
       message: "Fehler bei der Validierung der persönlichen Daten.",
+      success: false,
     };
   }
 
@@ -83,44 +119,44 @@ export async function submitGuestPersonalDataAction(bookingToken: string, prevSt
     revalidatePath("/admin/dashboard"); // Also revalidate admin views
     revalidatePath("/admin/bookings");
 
-    return { message: "Persönliche Daten erfolgreich übermittelt.", errors: {} };
+    return { message: "Persönliche Daten erfolgreich übermittelt.", errors: null, success: true };
   } catch (e) {
     console.error("Error submitting personal data:", e);
-    return { message: "Datenbankfehler: Persönliche Daten konnten nicht übermittelt werden.", errors: {} };
+    return { message: "Datenbankfehler: Persönliche Daten konnten nicht übermittelt werden.", errors: null, success: false };
   }
 }
 
 export async function submitGuestDocumentsAction(bookingToken: string, prevState: any, formData: FormData) {
-  // formData here would contain File objects for 'documents'
-  // This is a placeholder for document upload logic.
-  // Actual implementation requires file handling, storage (e.g., Firebase Storage), and saving URLs to DB.
-  
-  const documents = formData.getAll('documents'); // Assuming input name is 'documents'
+  const documents = formData.getAll('documents'); 
   console.log(`Uploading documents for booking ${bookingToken}:`, documents);
 
-  if (documents.length === 0 || (documents[0] as File).size === 0) {
-     // No files uploaded, this might be acceptable or an error depending on requirements
-     // For now, let's say it's okay and proceed.
+  let success = true;
+  let message = "Dokumente 'simuliert' hochgeladen.";
+
+  if (documents.length === 0 || (documents[0] instanceof File && (documents[0] as File).size === 0)) {
     console.log("No documents uploaded or empty file.");
-    // return { message: "Keine Dokumente hochgeladen.", errors: {} };
+    message = "Keine Dokumente zum Hochladen ausgewählt.";
+    // success can remain true if documents are optional. If required, set success = false.
   } else {
-    // Simulate document upload process
     const uploadedDocumentUrls: string[] = [];
     for (const doc of documents) {
-      if((doc as File).size > 0) {
+      if(doc instanceof File && doc.size > 0) {
         // Simulate upload and get URL
-        const mockUrl = `https://placehold.co/uploads/mock_${(doc as File).name}`;
+        const mockUrl = `https://placehold.co/uploads/mock_${doc.name.replace(/\s+/g, '_')}`;
         uploadedDocumentUrls.push(mockUrl);
-        console.log(`Uploaded ${(doc as File).name} to ${mockUrl}`);
+        console.log(`Uploaded ${doc.name} to ${mockUrl}`);
+      } else if (doc instanceof File && doc.size === 0) {
+        console.log(`Skipped empty file: ${doc.name}`);
+      } else {
+        console.warn("Item in documents is not a file or has no size:", doc);
       }
     }
     // In a real app, update booking with document URLs
     // await db.bookings.update({ where: { token: bookingToken }, data: { guestSubmittedData: { documentUrls: uploadedDocumentUrls } } });
   }
 
-
   revalidatePath(`/buchung/${bookingToken}`);
-  return { message: "Dokumente 'simuliert' hochgeladen.", errors: {} };
+  return { message, errors: null, success };
 }
 
 
@@ -131,6 +167,7 @@ export async function submitGuestSpecialRequestsAction(bookingToken: string, pre
     return {
       errors: validatedFields.error.flatten().fieldErrors,
       message: "Fehler bei der Validierung der Sonderwünsche.",
+      success: false,
     };
   }
 
@@ -143,9 +180,11 @@ export async function submitGuestSpecialRequestsAction(bookingToken: string, pre
     revalidatePath("/admin/dashboard");
     revalidatePath("/admin/bookings");
     
-    return { message: "Sonderwünsche erfolgreich übermittelt. Buchung abgeschlossen!", success: true, errors: {} };
+    return { message: "Sonderwünsche erfolgreich übermittelt. Buchung abgeschlossen!", success: true, errors: null };
   } catch (e) {
     console.error("Error submitting special requests:", e);
-    return { message: "Datenbankfehler: Sonderwünsche konnten nicht übermittelt werden.", success: false, errors: {} };
+    return { message: "Datenbankfehler: Sonderwünsche konnten nicht übermittelt werden.", success: false, errors: null };
   }
 }
+
+    
