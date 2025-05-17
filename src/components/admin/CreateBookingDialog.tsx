@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useEffect, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,7 +44,7 @@ function SubmitButton() {
 
 export function CreateBookingDialog() {
   const [open, setOpen] = useState(false);
-  const [state, formAction] = useFormState(createBookingAction, initialState);
+  const [state, formAction] = useActionState(createBookingAction, initialState);
   const { toast } = useToast();
 
   const [checkInDate, setCheckInDate] = useState<Date | undefined>(undefined);
@@ -73,7 +73,7 @@ export function CreateBookingDialog() {
         // For controlled components, you might need to manually reset here.
         setCheckInDate(undefined);
         setCheckOutDate(undefined);
-      } else if (state.message && Object.keys(state.errors).length === 0 ) { // General success message without token (should ideally not happen if token is always generated on success)
+      } else if (state.message && Object.keys(state.errors ?? {}).length === 0 ) { // General success message without token (should ideally not happen if token is always generated on success)
          toast({
           title: "Erfolg",
           description: state.message,

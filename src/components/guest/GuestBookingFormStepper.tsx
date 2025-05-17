@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useEffect, type ReactNode, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -152,11 +152,13 @@ const steps: Step[] = [
 
 export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [formState, formAction] = useFormState(
+  const [formState, formAction] = useActionState(
     (prevState: FormState, formData: FormData) => {
       const currentAction = steps[currentStep].action;
       if (currentAction) {
-        return currentAction(bookingToken, prevState, formData);
+        // Bind the bookingToken to the action
+        const boundAction = currentAction.bind(null, bookingToken);
+        return boundAction(prevState, formData);
       }
       return Promise.resolve({ message: "Aktion nicht definiert", errors: null, success: false });
     },
