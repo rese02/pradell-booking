@@ -9,16 +9,18 @@ import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; // Import centralized mock data
+import { findMockBookingById } from "@/lib/mock-db";
 import { notFound } from "next/navigation";
 
 
-// Mock data fetching function - replace with actual data fetching
 async function getBookingDetails(id: string): Promise<Booking | null> {
+  console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details for id: "${id}"`);
   await new Promise(resolve => setTimeout(resolve, 100)); // Simulate API delay
-  const booking = MOCK_BOOKINGS_DB.find(b => b.id === id);
+  const booking = findMockBookingById(id);
   if (!booking) {
-    console.log(`Booking with id ${id} not found in MOCK_BOOKINGS_DB`);
+    console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
+  } else {
+    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}:`, booking);
   }
   return booking || null;
 }

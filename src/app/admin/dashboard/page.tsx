@@ -6,22 +6,23 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; // Import centralized mock data
+import { getMockBookings } from "@/lib/mock-db";
 
 // This function would fetch data in a real app
-async function getBookings(): Promise<Booking[]> {
+async function fetchBookings(): Promise<Booking[]> {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 100));
   // Return the potentially mutated MOCK_BOOKINGS_DB
   // Sort by creation date, newest first, for better UX when adding new ones
-  return [...MOCK_BOOKINGS_DB].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const bookings = getMockBookings();
+  return [...bookings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 async function getDashboardStats() {
   // Simulate API delay and data fetching for stats
   await new Promise(resolve => setTimeout(resolve, 100));
   const today = new Date().setHours(0,0,0,0);
-  const bookings = await getBookings(); // Use the same source
+  const bookings = getMockBookings(); // Use the centralized function
 
   const arrivalsToday = bookings.filter(b => {
     const checkIn = new Date(b.checkInDate!).setHours(0,0,0,0);
@@ -85,7 +86,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, descripti
 
 
 export default async function AdminDashboardPage() {
-  const bookings = await getBookings();
+  const bookings = await fetchBookings();
   const stats = await getDashboardStats();
 
   return (

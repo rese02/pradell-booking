@@ -3,47 +3,49 @@ import { GuestBookingFormStepper } from "@/components/guest/GuestBookingFormStep
 import type { Booking } from "@/lib/definitions";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; 
+import { findMockBookingByToken, getMockBookings } from "@/lib/mock-db"; 
 import { notFound } from "next/navigation";
 
-// Log module evaluation time and initial state of MOCK_BOOKINGS_DB
-console.log(`[Module /buchung/[token]/page.tsx] Module evaluated. MOCK_BOOKINGS_DB length at module load: ${MOCK_BOOKINGS_DB.length}`);
-console.log(`[Module /buchung/[token]/page.tsx] Tokens at module load:`, MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', '));
+// Log module evaluation time
+console.log(`[Module /buchung/[token]/page.tsx] Module evaluated at ${new Date().toISOString()}`);
 
 // Mock data fetching function - replace with actual data fetching from your backend/Firebase
 async function getBookingByToken(token: string): Promise<Booking | null> {
-  console.log(`[getBookingByToken] Attempting to fetch booking for token: "${token}"`);
+  console.log(`[Server getBookingByToken] Attempting to fetch booking for token: "${token}" at ${new Date().toISOString()}`);
+  
   // Log the current state of MOCK_BOOKINGS_DB that this function sees
-  console.log(`[getBookingByToken] Current MOCK_BOOKINGS_DB length: ${MOCK_BOOKINGS_DB.length}`);
-  const availableTokens = MOCK_BOOKINGS_DB.map(b => b.bookingToken);
-  console.log(`[getBookingByToken] Available tokens in MOCK_BOOKINGS_DB: [${availableTokens.join(', ')}]`);
+  const currentBookingsInDb = getMockBookings(); // Use the new getter
+  const availableTokens = currentBookingsInDb.map(b => b.bookingToken);
+  console.log(`[Server getBookingByToken] Current MOCK_BOOKINGS_DB length: ${currentBookingsInDb.length}`);
+  console.log(`[Server getBookingByToken] Available tokens in MOCK_BOOKINGS_DB: [${availableTokens.join(', ')}]`);
   
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 100));
 
-  const booking = MOCK_BOOKINGS_DB.find(b => b.bookingToken === token);
+  const booking = findMockBookingByToken(token); // Use the new finder
 
   if (booking) {
-    console.log(`[getBookingByToken] Found booking for token "${token}". Status: ${booking.status}`);
+    console.log(`[Server getBookingByToken] Found booking for token "${token}". Status: ${booking.status}`);
     return booking;
   } else {
-    console.warn(`[getBookingByToken] No booking found for token "${token}".`);
+    console.warn(`[Server getBookingByToken] No booking found for token "${token}".`);
     return null;
   }
 }
 
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
-  console.log(`[GuestBookingPage] Rendering page for token: "${params.token}"`);
+  console.log(`[Server GuestBookingPage] Rendering page for token: "${params.token}" at ${new Date().toISOString()}`);
   const booking = await getBookingByToken(params.token);
 
   if (!booking) {
-    console.error(`[GuestBookingPage] Booking not found for token "${params.token}", calling notFound().`);
+    console.error(`[Server GuestBookingPage] Booking not found for token "${params.token}", calling notFound().`);
     notFound();
   }
   
   // Check if guest data was already submitted and booking is confirmed
   if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
+     console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Confirmed and data submitted.`);
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
@@ -61,6 +63,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (booking.status === "Cancelled") {
+    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Cancelled.`);
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
@@ -78,13 +81,14 @@ export default async function GuestBookingPage({ params }: { params: { token: st
 
   // If booking is pending guest information (and not yet fully submitted and confirmed)
   if (booking.status === "Pending Guest Information") {
+    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Pending Guest Information. Rendering form.`);
     return (
       <GuestBookingFormStepper bookingToken={params.token} bookingDetails={booking} />
     );
   }
 
   // Fallback for other statuses or unexpected scenarios
-  console.warn(`[GuestBookingPage] Booking found for token "${params.token}", but status is "${booking.status}", which is not handled by specific UI. Displaying generic status message.`);
+  console.warn(`[Server GuestBookingPage] Booking found for token "${params.token}", but status is "${booking.status}", which is not handled by specific UI. Displaying generic status message.`);
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
@@ -100,3 +104,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
       </Card>
   );
 }
+
+// Enable Edge runtime for this page if possible, or ensure nodejs runtime handles state well.
+// For mock data, this is less critical than with a real DB.
+// export const runtime = 'edge'; // Consider if compatible with all features
