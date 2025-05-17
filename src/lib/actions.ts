@@ -45,15 +45,17 @@ const fileSchema = z.instanceof(File).optional().nullable()
     "Nur .jpg, .jpeg, .png und .pdf Dateien sind erlaubt."
   );
 
-// --- Neue Zod Schemas für die 5 Schritte ---
+// --- Schemas für die einzelnen Schritte des Gästebuchungsformulars ---
 
 const gastStammdatenSchema = z.object({
   anrede: z.enum(['Herr', 'Frau', 'Divers'], { required_error: "Anrede ist erforderlich." }),
   gastVorname: z.string().min(1, "Vorname ist erforderlich."),
   gastNachname: z.string().min(1, "Nachname ist erforderlich."),
-  geburtsdatum: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), {
-    message: "Ungültiges Geburtsdatum."
-  }),
+  geburtsdatum: z.string().optional().refine(val => {
+    if (!val) return true; // Optional, so empty is fine
+    const date = new Date(val);
+    return !isNaN(date.getTime());
+  }, { message: "Ungültiges Geburtsdatum." }),
   email: z.string().email("Ungültige E-Mail-Adresse."),
   telefon: z.string().min(1, "Telefonnummer ist erforderlich."),
 });
@@ -65,7 +67,6 @@ const ausweisdokumenteSchema = z.object({
 });
 
 const zahlungsinformationenSchema = z.object({
-  // anzahlungsbetrag wird serverseitig oder aus booking.price gelesen
   zahlungsart: z.literal('Überweisung', { required_error: "Zahlungsart ist erforderlich (aktuell nur Überweisung)."}),
   zahlungsdatum: z.string().min(1, "Zahlungsdatum ist erforderlich.").refine(val => !isNaN(Date.parse(val)), {
     message: "Ungültiges Zahlungsdatum."
@@ -86,7 +87,7 @@ const uebersichtBestaetigungSchema = z.object({
 // --- Server Actions ---
 
 function generateActionToken() {
-  return Date.now().toString();
+  return Date.now().toString() + Math.random().toString(36).substring(2, 9);
 }
 
 export async function createBookingAction(prevState: any, formData: FormData) {
@@ -100,7 +101,7 @@ export async function createBookingAction(prevState: any, formData: FormData) {
       message: "Fehler bei der Validierung der Buchungsdaten.",
       bookingToken: null,
       success: false,
-      actionToken: prevState?.actionToken // Behalte vorherigen Token, falls Validierung fehlschlägt
+      actionToken: prevState?.actionToken 
     };
   }
 
@@ -130,7 +131,7 @@ export async function createBookingAction(prevState: any, formData: FormData) {
       alterKinder: bookingData.alterKinder || '',
       interneBemerkungen: bookingData.interneBemerkungen || '',
       roomIdentifier: `${bookingData.zimmertyp}`, 
-      guestSubmittedData: { // Initialisiere guestSubmittedData für den neuen Flow
+      guestSubmittedData: { 
         lastCompletedStep: 0,
       }
     };
@@ -161,18 +162,20 @@ export async function createBookingAction(prevState: any, formData: FormData) {
   }
 }
 
+// Hilfsfunktion für die Aktualisierung der Schritte im Gästebuchungsformular
 async function updateBookingStep(
   bookingToken: string,
   stepNumber: number,
-  updateData: Partial<GuestSubmittedData>,
   actionSchema: z.ZodType<any, any>,
-  formData: FormData
+  formData: FormData,
+  additionalDataToMerge?: Partial<GuestSubmittedData> // Für serverseitig kalkulierte Daten
 ) {
   const rawFormData = Object.fromEntries(formData.entries());
   console.log(`[Action updateBookingStep - Step ${stepNumber}] For token: ${bookingToken}. Raw FormData:`, rawFormData);
 
   const validatedFields = actionSchema.safeParse(rawFormData);
-  const actionToken = generateActionToken();
+  const clientActionToken = formData.get("currentActionToken") as string | undefined;
+  const newServerActionToken = generateActionToken();
 
   if (!validatedFields.success) {
     console.error(`[Action updateBookingStep - Step ${stepNumber}] Validation failed:`, validatedFields.error.flatten().fieldErrors);
@@ -180,94 +183,117 @@ async function updateBookingStep(
       errors: validatedFields.error.flatten().fieldErrors,
       message: `Fehler bei der Validierung für Schritt ${stepNumber}.`,
       success: false,
-      actionToken: (formData.get("currentActionToken") as string) || undefined,
+      actionToken: clientActionToken, // Behalte Client-Token bei Fehler, um Re-Submit zu ermöglichen/verfolgen
+      updatedGuestData: null,
     };
   }
   
-  const data = validatedFields.data;
-  console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated data:`, data);
+  const dataFromForm = validatedFields.data;
+  console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated data from form:`, dataFromForm);
 
   try {
     const booking = findMockBookingByToken(bookingToken);
     if (!booking) {
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] Booking not found for token: ${bookingToken}`);
-      return { message: "Buchung nicht gefunden.", errors: null, success: false, actionToken: (formData.get("currentActionToken") as string) || undefined };
+      return { message: "Buchung nicht gefunden.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
     }
 
     const currentGuestData = booking.guestSubmittedData || {};
+    
+    // Merge-Strategie: Aktuelle Daten + Serverseitig berechnete Daten + Formulardaten für diesen Schritt
     const updatedGuestData: GuestSubmittedData = {
       ...currentGuestData,
-      ...updateData, // Spezifische Daten für diesen Schritt
-      ...data, // Validierte Daten aus dem Formular
+      ...additionalDataToMerge, 
+      ...dataFromForm,       
       lastCompletedStep: Math.max(currentGuestData.lastCompletedStep || 0, stepNumber),
       submittedAt: new Date().toISOString(),
     };
+     console.log(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data (before file handling):`, updatedGuestData);
+
 
     // Simuliere Datei-Uploads, indem URLs generiert werden
-    if (data.hauptgastAusweisVorderseite && data.hauptgastAusweisVorderseite.size > 0) {
-      updatedGuestData.hauptgastAusweisVorderseiteUrl = `https://placehold.co/uploads/mock_hg_v_${Date.now()}_${data.hauptgastAusweisVorderseite.name.replace(/\s+/g, '_')}`;
+    if (dataFromForm.hauptgastAusweisVorderseite && dataFromForm.hauptgastAusweisVorderseite.size > 0) {
+      updatedGuestData.hauptgastAusweisVorderseiteUrl = `https://placehold.co/uploads/mock_hg_v_${Date.now()}_${dataFromForm.hauptgastAusweisVorderseite.name.replace(/\s+/g, '_')}`;
     }
-    if (data.hauptgastAusweisRückseite && data.hauptgastAusweisRückseite.size > 0) {
-      updatedGuestData.hauptgastAusweisRückseiteUrl = `https://placehold.co/uploads/mock_hg_r_${Date.now()}_${data.hauptgastAusweisRückseite.name.replace(/\s+/g, '_')}`;
+    if (dataFromForm.hauptgastAusweisRückseite && dataFromForm.hauptgastAusweisRückseite.size > 0) {
+      updatedGuestData.hauptgastAusweisRückseiteUrl = `https://placehold.co/uploads/mock_hg_r_${Date.now()}_${dataFromForm.hauptgastAusweisRückseite.name.replace(/\s+/g, '_')}`;
     }
-    if (data.zahlungsbeleg && data.zahlungsbeleg.size > 0) {
-      updatedGuestData.zahlungsbelegUrl = `https://placehold.co/uploads/mock_zb_${Date.now()}_${data.zahlungsbeleg.name.replace(/\s+/g, '_')}`;
+    if (dataFromForm.zahlungsbeleg && dataFromForm.zahlungsbeleg.size > 0) {
+      updatedGuestData.zahlungsbelegUrl = `https://placehold.co/uploads/mock_zb_${Date.now()}_${dataFromForm.zahlungsbeleg.name.replace(/\s+/g, '_')}`;
+    }
+     // Für Bestätigungsschritt
+    if (typeof dataFromForm.agbAkzeptiert === 'string') { // Zod wandelt 'on' in string um
+        updatedGuestData.agbAkzeptiert = dataFromForm.agbAkzeptiert === 'on';
+    }
+    if (typeof dataFromForm.datenschutzAkzeptiert === 'string') {
+        updatedGuestData.datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert === 'on';
     }
     
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Final updated guest data (after file handling):`, updatedGuestData);
+
     const success = updateMockBookingByToken(bookingToken, { 
       guestSubmittedData: updatedGuestData,
-      // Aktualisiere guestFirstName/LastName in Booking, falls sie in Schritt 1 geändert wurden
-      ...(stepNumber === 1 && { guestFirstName: data.gastVorname, guestLastName: data.gastNachname })
+      ...(stepNumber === 1 && { guestFirstName: dataFromForm.gastVorname, guestLastName: dataFromForm.gastNachname })
     });
 
     if (success) {
       console.log(`[Action updateBookingStep - Step ${stepNumber}] Data submitted successfully for token: ${bookingToken}`);
       revalidatePath(`/buchung/${bookingToken}`, "layout"); 
       if (booking.id) revalidatePath(`/admin/bookings/${booking.id}`, "page");
-      return { message: `Schritt ${stepNumber} erfolgreich übermittelt.`, errors: null, success: true, actionToken };
+      return { 
+        message: `Schritt ${stepNumber} erfolgreich übermittelt.`, 
+        errors: null, 
+        success: true, 
+        actionToken: newServerActionToken,
+        updatedGuestData: updatedGuestData // Wichtig: das vollständige, aktualisierte Objekt zurückgeben
+      };
     } else {
       console.error(`[Action updateBookingStep - Step ${stepNumber}] Failed to update booking for token: ${bookingToken}`);
-      return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false, actionToken: (formData.get("currentActionToken") as string) || undefined };
+      return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
     }
 
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
     console.error(`[Action updateBookingStep - Step ${stepNumber}] Error submitting data:`, error.message, error.stack);
-    return { message: "Serverfehler: Daten konnten nicht übermittelt werden.", errors: null, success: false, actionToken: (formData.get("currentActionToken") as string) || undefined };
+    return { message: "Serverfehler: Daten konnten nicht übermittelt werden.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
   }
 }
 
+// --- Aktionen für die einzelnen Schritte ---
+
 export async function submitGastStammdatenAction(bookingToken: string, prevState: any, formData: FormData) {
-  return updateBookingStep(bookingToken, 1, {
-    // gastVorname, gastNachname etc. werden direkt aus validatedFields.data übernommen
-  }, gastStammdatenSchema, formData);
+  console.log("[Action submitGastStammdatenAction] Called.");
+  return updateBookingStep(bookingToken, 1, gastStammdatenSchema, formData);
 }
 
 export async function submitAusweisdokumenteAction(bookingToken: string, prevState: any, formData: FormData) {
-   return updateBookingStep(bookingToken, 2, {
-    // hauptgastDokumenttyp etc. werden direkt aus validatedFields.data übernommen
-  }, ausweisdokumenteSchema, formData);
+  console.log("[Action submitAusweisdokumenteAction] Called.");
+  return updateBookingStep(bookingToken, 2, ausweisdokumenteSchema, formData);
 }
 
 export async function submitZahlungsinformationenAction(bookingToken: string, prevState: any, formData: FormData) {
-  // Hier könnte die Logik für den Anzahlungsbetrag stehen
+  console.log("[Action submitZahlungsinformationenAction] Called.");
   const booking = findMockBookingByToken(bookingToken);
-  const anzahlungsbetrag = booking ? booking.price * 0.3 : 0;
-
-  return updateBookingStep(bookingToken, 3, {
-    zahlungsbetrag: anzahlungsbetrag, // Beispiel: Anzahlung wird hier gesetzt
-    // zahlungsart, zahlungsdatum etc. kommen aus validatedFields.data
-  }, zahlungsinformationenSchema, formData);
+  const anzahlungsbetrag = booking ? parseFloat((booking.price * 0.3).toFixed(2)) : 0;
+  
+  return updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, {
+    zahlungsbetrag: anzahlungsbetrag,
+  });
 }
 
 export async function submitEndgueltigeBestaetigungAction(bookingToken: string, prevState: any, formData: FormData) {
-  const result = await updateBookingStep(bookingToken, 4, {
-    // agbAkzeptiert, datenschutzAkzeptiert kommen aus validatedFields.data
-  }, uebersichtBestaetigungSchema, formData);
+  console.log("[Action submitEndgueltigeBestaetigungAction] Called.");
+  const result = await updateBookingStep(bookingToken, 4, uebersichtBestaetigungSchema, formData);
 
-  if (result.success) {
-    // Wenn der letzte Schritt erfolgreich war, Buchungsstatus auf "Confirmed" setzen
-    const successConfirmation = updateMockBookingByToken(bookingToken, { status: "Confirmed" });
+  if (result.success && result.updatedGuestData) {
+    const successConfirmation = updateMockBookingByToken(bookingToken, { 
+        status: "Confirmed",
+        guestSubmittedData: { // Stelle sicher, dass die finalen Daten konsistent sind
+            ...result.updatedGuestData,
+            agbAkzeptiert: true, // Da das Schema 'on' validiert, setzen wir hier explizit true
+            datenschutzAkzeptiert: true,
+        }
+    });
     if (successConfirmation) {
        console.log(`[Action submitEndgueltigeBestaetigungAction] Booking ${bookingToken} status set to Confirmed.`);
        const booking = findMockBookingByToken(bookingToken);
@@ -276,28 +302,9 @@ export async function submitEndgueltigeBestaetigungAction(bookingToken: string, 
        // Hier könnte E-Mail-Versand Logik stehen
        return { ...result, message: "Buchung erfolgreich abgeschlossen und bestätigt!" };
     } else {
+        console.error(`[Action submitEndgueltigeBestaetigungAction] Failed to set booking ${bookingToken} to Confirmed.`);
         return { ...result, success: false, message: "Fehler beim finalen Bestätigen der Buchung."};
     }
   }
   return result;
-}
-
-
-// --- Alte Actions (Referenz/Entfernung) ---
-export async function submitHauptgastAction(bookingToken: string, prevState: any, formData: FormData) {
-  // Diese Action ist veraltet und wird durch submitGastStammdatenAction und submitAusweisdokumenteAction ersetzt
-  console.warn("[Action submitHauptgastAction] This action is deprecated.");
-  return { message: "Veraltete Aktion.", errors: null, success: false, actionToken: prevState?.actionToken };
-}
-export async function submitMitreisendeAction(bookingToken: string, prevState: any, formData: FormData) {
-   console.warn("[Action submitMitreisendeAction] This action is deprecated as Mitreisende are not in the new flow.");
-   return { message: "Veraltete Aktion.", errors: null, success: false, actionToken: prevState?.actionToken };
-}
-export async function submitPaymentAmountSelectionAction(bookingToken: string, prevState: any, formData: FormData) {
-    console.warn("[Action submitPaymentAmountSelectionAction] This action is deprecated, payment info is now part of step 3.");
-    return { message: "Veraltete Aktion.", errors: null, success: false, actionToken: prevState?.actionToken };
-}
-export async function submitBookingCompletionAction(bookingToken: string, prevState: any, formData: FormData) {
-  console.warn("[Action submitBookingCompletionAction] This action is deprecated, use submitEndgueltigeBestaetigungAction.");
-  return { message: "Veraltete Aktion.", errors: null, success: false, actionToken: prevState?.actionToken };
 }

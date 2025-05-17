@@ -1,10 +1,11 @@
 
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
@@ -19,7 +20,11 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
   if (!booking) {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
   } else {
-    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}:`, booking ? { ...booking, guestSubmittedData: !!booking.guestSubmittedData } : null);
+    // Log guestSubmittedData carefully to avoid overly verbose logs if it's large
+    const guestDataSummary = booking.guestSubmittedData 
+        ? { submitted: true, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
+        : { submitted: false };
+    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}. Guest Data Summary:`, guestDataSummary);
   }
   return booking || null;
 }
@@ -43,7 +48,7 @@ const formatCurrency = (amount?: number) => {
 interface DetailItemProps {
   icon: React.ElementType;
   label: string;
-  value?: string | number | null;
+  value?: string | number | null | boolean;
   isCurrency?: boolean;
   isLink?: boolean;
   isBadge?: boolean;
@@ -64,16 +69,22 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     )
   }
   
-  if (value === null || typeof value === 'undefined' || value === "") return null;
+  if (value === null || typeof value === 'undefined' || value === "") {
+     if (typeof value === 'boolean' && value === false) {
+        // Allow 'false' boolean to be displayed as "Nein" or similar if needed
+     } else {
+        return null;
+     }
+  }
   
   let displayValue: React.ReactNode = value;
-  if (isCurrency && typeof value === 'number') {
-    displayValue = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(value);
-  }
-  if (isLink && typeof value === 'string') {
+  if (typeof value === 'boolean') {
+    displayValue = value ? "Ja" : "Nein";
+  } else if (isCurrency && typeof value === 'number') {
+    displayValue = formatCurrency(value);
+  } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
-  }
-  if (isBadge && typeof value === 'string') {
+  } else if (isBadge && typeof value === 'string') {
     displayValue = <Badge variant={badgeVariant || 'secondary'}>{value}</Badge>;
   }
 
@@ -154,7 +165,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
           {booking.interneBemerkungen && (
             <Card>
               <CardHeader>
-                <CardTitle>Interne Bemerkungen</CardTitle>
+                <CardTitle>Interne Bemerkungen (Hotel)</CardTitle>
               </CardHeader>
               <CardContent>
                 <DetailItem icon={MessageSquare} label="Bemerkung" value={booking.interneBemerkungen} />
@@ -163,14 +174,14 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
           )}
 
 
-          {guestData && (guestData.gastVorname || guestData.email) && ( // Überprüfen, ob relevante Gastdaten vorhanden sind
+          {guestData && (guestData.gastVorname || guestData.email) && ( 
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>
                 {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)} (Letzter Schritt: {guestData.lastCompletedStep})</CardDescription>}
               </CardHeader>
               <CardContent className="space-y-4">
-                <h3 className="font-semibold text-lg">Stammdaten</h3>
+                <h3 className="font-semibold text-lg flex items-center"><UserCircle className="mr-2 h-5 w-5 text-muted-foreground" /> Stammdaten Hauptgast</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
                     <DetailItem icon={User} label="Anrede" value={guestData.anrede} />
                     <DetailItem icon={User} label="Vollständiger Name" value={`${guestData.gastVorname || ''} ${guestData.gastNachname || ''}`} />
@@ -179,10 +190,10 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
                 </div>
                 
-                {(guestData.hauptgastDokumenttyp || guestData.hauptgastAusweisVorderseiteUrl) && (
+                {(guestData.hauptgastDokumenttyp || guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
                   <>
                     <Separator />
-                    <h3 className="font-semibold text-lg">Ausweisdokument Hauptgast</h3>
+                    <h3 className="font-semibold text-lg mt-4 flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <DetailItem icon={Briefcase} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
                     </div>
@@ -226,10 +237,10 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {(guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
                     <>
                         <Separator />
-                        <h3 className="font-semibold text-lg">Zahlungsinformationen</h3>
+                        <h3 className="font-semibold text-lg mt-4 flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
-                            <DetailItem icon={Euro} label="Gezahlter Betrag (Anzahlung)" value={guestData.zahlungsbetrag} isCurrency/>
+                            <DetailItem icon={Euro} label="Anzahlung (30%)" value={guestData.zahlungsbetrag} isCurrency/>
                             <DetailItem icon={CalendarDays} label="Zahlungsdatum" value={formatDate(guestData.zahlungsdatum)} />
                         </div>
                         {guestData.zahlungsbelegUrl && (
@@ -245,10 +256,10 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     </>
                 )}
                 
-                {guestData.specialRequests && (
+                {guestData.specialRequests && ( // Dieses Feld wird aktuell im neuen Flow nicht erfasst
                   <>
                     <Separator />
-                    <h3 className="font-semibold text-lg">Sonderwünsche</h3>
+                    <h3 className="font-semibold text-lg mt-4">Sonderwünsche (Alt)</h3>
                     <DetailItem icon={MessageSquare} label="Nachricht" value={guestData.specialRequests} />
                   </>
                 )}
@@ -256,10 +267,10 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
                     <>
                         <Separator />
-                        <h3 className="font-semibold text-lg">Zustimmungen</h3>
+                        <h3 className="font-semibold text-lg mt-4 flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
                         <div className="grid gap-4 sm:grid-cols-2">
-                           {guestData.agbAkzeptiert !== undefined && <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert ? "Ja" : "Nein"} />}
-                           {guestData.datenschutzAkzeptiert !== undefined && <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert ? "Ja" : "Nein"} />}
+                           <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert} />
+                           <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert} />
                         </div>
                     </>
                 )}

@@ -1,7 +1,8 @@
 
+
 export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation" | "Confirmed" | "Cancelled";
 
-export interface Mitreisender { // Beibehalten, falls später wieder benötigt, aktuell nicht im neuen 5-Schritt-Flow
+export interface Mitreisender { 
   id: string;
   vorname?: string;
   nachname?: string;
@@ -16,8 +17,8 @@ export interface GuestSubmittedData {
   id?: string; 
   // Schritt 1: Gast-Stammdaten
   anrede?: 'Herr' | 'Frau' | 'Divers';
-  gastVorname?: string; // Umbenannt von guestFirstName zur Klarheit, da fullName oft verwendet wird
-  gastNachname?: string; // Umbenannt von guestLastName
+  gastVorname?: string; 
+  gastNachname?: string; 
   geburtsdatum?: string; // ISO Format YYYY-MM-DD
   email?: string;
   telefon?: string;
@@ -28,44 +29,44 @@ export interface GuestSubmittedData {
   hauptgastAusweisRückseiteUrl?: string;  
 
   // Schritt 3: Zahlungsinformationen
-  zahlungsart?: 'Überweisung'; // Vorerst nur Überweisung
-  zahlungsbetrag?: number; // Kann Anzahlung oder Gesamtbetrag sein
+  zahlungsart?: 'Überweisung'; 
+  zahlungsbetrag?: number; 
   zahlungsdatum?: string; // ISO Format YYYY-MM-DD
   zahlungsbelegUrl?: string;
   
-  // Für die Auswahl der Zahlungssumme, falls noch relevant oder als Teil von Schritt 3
-  paymentAmountSelection?: 'downpayment' | 'full_amount'; 
-
-  // Beibehaltene allgemeine Felder
-  specialRequests?: string; // Könnte in Schritt 1 oder 4 erfasst werden
-  datenschutzAkzeptiert?: boolean; // Für Schritt 4 (Übersicht)
-  agbAkzeptiert?: boolean; // Für Schritt 4 (Übersicht)
+  // Beibehaltene allgemeine Felder (werden in den neuen Schritten nicht mehr explizit als eigene Felder erfasst, aber die Struktur bleibt für Altdaten)
+  specialRequests?: string; 
   
-  // Alte Felder, die ggf. migriert/entfernt werden müssen:
-  fullName?: string; // Wird durch gastVorname/gastNachname ersetzt
-  guestFirstName?: string; 
-  guestLastName?: string; 
-  phone?: string; // Bereits oben als telefon
-  alter?: number; // Wird durch geburtsdatum ersetzt für präzisere Altersangabe
-  ausweisVorderseiteUrl?: string; // Ersetzt durch hauptgastAusweis...
-  ausweisRückseiteUrl?: string;  // Ersetzt durch hauptgastAusweis...
-  addressLine1?: string; // Nicht im neuen Flow
-  addressLine2?: string; // Nicht im neuen Flow
-  city?: string; // Nicht im neuen Flow
-  postalCode?: string; // Nicht im neuen Flow
-  country?: string; // Nicht im neuen Flow
-  documentUrls?: string[]; // Wird durch spezifische URLs ersetzt
-  mitreisende?: Mitreisender[]; // Aktuell nicht im neuen Flow
+  // Schritt 4 (ehemals 5): Übersicht & Bestätigung
+  agbAkzeptiert?: boolean; 
+  datenschutzAkzeptiert?: boolean; 
   
   submittedAt?: Date | string; 
-  lastCompletedStep?: number; // Um den Fortschritt zu speichern
-  actionToken?: string; // Für die Navigation
+  lastCompletedStep?: number; 
+  actionToken?: string; 
+
+  // Nicht mehr aktiv genutzte Felder aus älteren Strukturen (zur Referenz):
+  // fullName?: string; 
+  // guestFirstName?: string; // use gastVorname
+  // guestLastName?: string; // use gastNachname
+  // phone?: string; // use telefon
+  // alter?: number; // use geburtsdatum
+  // ausweisVorderseiteUrl?: string; // use hauptgastAusweisVorderseiteUrl
+  // ausweisRückseiteUrl?: string;  // use hauptgastAusweisRückseiteUrl
+  // addressLine1?: string; 
+  // addressLine2?: string; 
+  // city?: string; 
+  // postalCode?: string; 
+  // country?: string; 
+  // documentUrls?: string[]; // use spezifische URLs
+  // mitreisende?: Mitreisender[]; // aktuell nicht im Flow
+  // paymentAmountSelection?: 'downpayment' | 'full_amount'; // Nicht mehr als separater Schritt
 }
 
 export interface Booking {
   id: string; 
-  guestFirstName: string; // Bleibt für die Admin-Anzeige / initiale Erstellung
-  guestLastName: string; // Bleibt für die Admin-Anzeige / initiale Erstellung
+  guestFirstName: string; 
+  guestLastName: string; 
   price: number;
   roomIdentifier: string; 
   checkInDate?: Date | string; 
@@ -86,7 +87,7 @@ export interface Booking {
   updatedAt: Date | string; 
 }
 
-// --- Form Data Typen für die neuen Schritte ---
+// --- Form Data Typen für die aktuellen Schritte ---
 
 export interface GastStammdatenFormData {
   anrede: 'Herr' | 'Frau' | 'Divers';
@@ -104,15 +105,15 @@ export interface AusweisdokumenteFormData {
 }
 
 export interface ZahlungsinformationenFormData {
-  // anzahlungsbetrag: number; // Wird automatisch kalkuliert oder später manuell editierbar
+  // anzahlungsbetrag wird automatisch kalkuliert
   zahlungsart: 'Überweisung';
   zahlungsdatum: string;
   zahlungsbeleg?: File | null;
 }
 
 export interface UebersichtBestaetigungFormData {
-  agbAkzeptiert: "on" | undefined;
-  datenschutzAkzeptiert: "on" | undefined;
+  agbAkzeptiert: boolean; // Wird als boolean interpretiert
+  datenschutzAkzeptiert: boolean; // Wird als boolean interpretiert
 }
 
 
@@ -131,31 +132,3 @@ export interface CreateBookingFormData {
   alterKinder?: string;
   interneBemerkungen?: string;
 }
-
-export interface HauptgastFormData { // Alt, wird durch GastStammdatenFormData und AusweisdokumenteFormData ersetzt
-  fullName: string; 
-  lastName: string; 
-  email: string;
-  phone: string;
-  alter?: number;
-  ausweisVorderseite?: File | null; 
-  ausweisRückseite?: File | null;  
-  specialRequests?: string;
-  datenschutz: "on" | undefined;
-}
-
-export interface MitreisendeFormData { // Alt
-  mitreisende: {
-    id?: string;
-    vorname: string;
-    nachname: string;
-    alter?: number;
-    ausweisVorderseite?: File | null;
-    ausweisRückseite?: File | null;
-  }[];
-}
-
-export interface PaymentAmountSelectionFormData { // Alt
-  paymentSelection: 'downpayment' | 'full_amount';
-}
-    
