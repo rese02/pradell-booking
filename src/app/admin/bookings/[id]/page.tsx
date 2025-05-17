@@ -15,12 +15,13 @@ import { notFound } from "next/navigation";
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
   console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details for id: "${id}"`);
-  await new Promise(resolve => setTimeout(resolve, 100)); // Simulate API delay
+  // Simuliere eine kleine Verzögerung, um echte API-Aufrufe nachzuahmen
+  // await new Promise(resolve => setTimeout(resolve, 100)); 
   const booking = findMockBookingById(id);
   if (!booking) {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
   } else {
-    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}:`, booking);
+    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}:`, booking ? { ...booking, guestSubmittedData: !!booking.guestSubmittedData } : null);
   }
   return booking || null;
 }
@@ -78,7 +79,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
       <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
       <div>
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="text-base font-medium">{displayValue}</p>
+        <div className="text-base font-medium">{displayValue}</div>
       </div>
     </div>
   );
@@ -88,11 +89,16 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
   const booking = await getBookingDetails(params.id);
 
   if (!booking) {
+    console.error(`[Server BookingDetailsPage] Booking not found for id "${params.id}" (getBookingDetails returned null). Calling notFound().`);
     notFound();
   }
+  
+  console.log(`[Server BookingDetailsPage] Booking data for id "${params.id}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
 
   const guestData = booking.guestSubmittedData;
-  const guestPortalLink = typeof window !== 'undefined' ? `${window.location.origin}/buchung/${booking.bookingToken}` : `/buchung/${booking.bookingToken}`;
+  // Avoid using window on server. Generate link relative to current host if needed, or absolute if host is known.
+  const guestPortalLink = `/buchung/${booking.bookingToken}`;
+
 
   return (
     <div className="container mx-auto py-2">
@@ -224,3 +230,4 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     </div>
   );
 }
+
