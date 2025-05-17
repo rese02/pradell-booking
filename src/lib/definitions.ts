@@ -1,28 +1,39 @@
 
 export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation" | "Confirmed" | "Cancelled";
 
+export interface Mitreisender {
+  id: string; // Can be temporary for client-side, or permanent from DB
+  vorname?: string;
+  nachname?: string;
+  alter?: number;
+  ausweisVorderseiteUrl?: string;
+  ausweisRückseiteUrl?: string;
+  // For FormData processing with files
+  ausweisVorderseiteFile?: File; 
+  ausweisRückseiteFile?: File;
+}
+
 export interface GuestSubmittedData {
   id?: string; 
-  // Fields from new Hauptgast form
-  fullName?: string; // Used for Hauptgast Vorname in form
-  guestFirstName?: string; // Could be derived from fullName or specific
-  guestLastName?: string; // Hauptgast Nachname
+  fullName?: string; 
+  guestFirstName?: string; 
+  guestLastName?: string; 
   email?: string;
   phone?: string;
   alter?: number;
-  ausweisVorderseiteUrl?: string; // Store URL after upload
-  ausweisRückseiteUrl?: string;  // Store URL after upload
+  ausweisVorderseiteUrl?: string; 
+  ausweisRückseiteUrl?: string;  
   specialRequests?: string;
   datenschutzAkzeptiert?: boolean;
   
-  // Legacy fields (can be removed if not used by Hauptgast form directly for address)
   addressLine1?: string;
   addressLine2?: string;
   city?: string;
   postalCode?: string;
   country?: string;
   
-  documentUrls?: string[]; // General documents, can combine with new specific ones
+  documentUrls?: string[]; 
+  mitreisende?: Mitreisender[]; // Array of fellow travelers
   submittedAt?: Date | string; 
 }
 
@@ -50,7 +61,6 @@ export interface Booking {
   updatedAt: Date | string; 
 }
 
-// For react-hook-form used in CreateBookingDialog
 export interface CreateBookingFormData {
   guestFirstName: string;
   guestLastName: string;
@@ -66,16 +76,26 @@ export interface CreateBookingFormData {
   interneBemerkungen?: string;
 }
 
-// For GuestBookingFormStepper (Step 1 - Hauptgast)
 export interface HauptgastFormData {
-  fullName: string; // Vorname on form
-  lastName: string; // Nachname on form
+  fullName: string; 
+  lastName: string; 
   email: string;
   phone: string;
   alter?: number;
-  ausweisVorderseite?: File; // File object from input
-  ausweisRückseite?: File;  // File object from input
+  ausweisVorderseite?: File | null; 
+  ausweisRückseite?: File | null;  
   specialRequests?: string;
-  datenschutz: boolean; // From checkbox
+  datenschutz: "on" | undefined; // Checkbox value
+}
+
+export interface MitreisendeFormData {
+  mitreisende: {
+    id?: string;
+    vorname: string;
+    nachname: string;
+    alter?: number;
+    ausweisVorderseite?: File | null;
+    ausweisRückseite?: File | null;
+  }[];
 }
     

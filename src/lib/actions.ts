@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import type { Booking, GuestSubmittedData } from "@/lib/definitions";
+import type { Booking, GuestSubmittedData, Mitreisender } from "@/lib/definitions";
 import { 
   addMockBooking, 
   findMockBookingByToken, 
@@ -44,7 +44,7 @@ const fileSchema = z.instanceof(File)
   .refine(
     (file) => file.size === 0 || ACCEPTED_IMAGE_TYPES.includes(file.type),
     "Nur .jpg, .png und .pdf Dateien sind erlaubt."
-  ).optional();
+  ).optional().nullable(); // Allow null for empty file inputs
 
 
 const hauptgastSchema = z.object({
@@ -52,18 +52,30 @@ const hauptgastSchema = z.object({
   lastName: z.string().min(1, "Nachname ist erforderlich."),
   email: z.string().email("Ungültige E-Mail-Adresse."),
   phone: z.string().min(1, "Telefonnummer ist erforderlich."),
-  alter: z.coerce.number().int().positive("Alter muss eine positive Zahl sein.").optional().or(z.literal("")), // Allow empty string for optional number
+  alter: z.coerce.number().int().positive("Alter muss eine positive Zahl sein.").optional().or(z.literal("")).nullable(),
   ausweisVorderseite: fileSchema,
   ausweisRückseite: fileSchema,
   specialRequests: z.string().optional(),
-  datenschutz: z.literal("on", { // Checkbox value is "on" when checked
+  datenschutz: z.literal("on", { 
     errorMap: () => ({ message: "Sie müssen den Datenschutzbestimmungen zustimmen." }),
   }),
-  // addressLine1: z.string().min(1, "Adresse Zeile 1 ist erforderlich."), // These were from old form
-  // addressLine2: z.string().optional(),
-  // city: z.string().min(1, "Stadt ist erforderlich."),
-  // postalCode: z.string().min(1, "Postleitzahl ist erforderlich."),
-  // country: z.string().min(1, "Land ist erforderlich."),
+});
+
+const mitreisenderSchema = z.object({
+  id: z.string().optional(), // Temporary client-side ID
+  vorname: z.string().min(1, "Vorname des Mitreisenden ist erforderlich."),
+  nachname: z.string().min(1, "Nachname des Mitreisenden ist erforderlich."),
+  alter: z.coerce.number().int().positive("Alter muss eine positive Zahl sein.").optional().or(z.literal("")).nullable(),
+  ausweisVorderseite: fileSchema,
+  ausweisRückseite: fileSchema,
+});
+
+const mitreisendeFormSchema = z.object({
+  // This structure expects FormData to be parsed in a way that `mitreisende` becomes an array of objects.
+  // This might require custom parsing logic if using plain FormData, or using a library that handles nested objects.
+  // For simple FormData, fields are typically flat like 'mitreisende[0][vorname]', 'mitreisende[0][nachname]', etc.
+  // For now, we assume the data will be transformed into this structure before validation or validated field by field.
+  mitreisende: z.array(mitreisenderSchema).optional(),
 });
 
 
@@ -79,6 +91,7 @@ export async function createBookingAction(prevState: any, formData: FormData) {
       errors: validatedFields.error.flatten().fieldErrors,
       message: "Fehler bei der Validierung der Buchungsdaten.",
       bookingToken: null,
+      success: false,
     };
   }
 
@@ -106,30 +119,31 @@ export async function createBookingAction(prevState: any, formData: FormData) {
       kleinkinder: bookingData.kleinkinder,
       alterKinder: bookingData.alterKinder || '',
       interneBemerkungen: bookingData.interneBemerkungen || '',
-      roomIdentifier: `${bookingData.zimmertyp}`, // Simplified identifier
+      roomIdentifier: `${bookingData.zimmertyp}`, 
     };
 
     addMockBooking(newBooking);
     console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
     
     revalidatePath("/admin/dashboard", "layout");
-    revalidatePath("/admin/bookings", "page");
+    revalidatePath("/admin/bookings", "page"); // For the table
     revalidatePath(`/admin/bookings/${newBookingId}`, "page"); 
-    revalidatePath(`/buchung/${newBookingToken}`, "layout"); // Revalidate layout for guest page too
+    revalidatePath(`/buchung/${newBookingToken}`, "layout");
 
     return {
       message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
       bookingToken: newBookingToken,
-      errors: null
+      errors: null,
+      success: true,
     };
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
     console.error("[Action createBookingAction] Error creating booking:", error.message, error.stack);
-    return { message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", errors: null, bookingToken: null };
+    return { message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", errors: null, bookingToken: null, success: false };
   }
 }
 
-// Renamed and updated action for the "Hauptgast" step
+
 export async function submitHauptgastAction(bookingToken: string, prevState: any, formData: FormData) {
   console.log(`[Action submitHauptgastAction] For token: ${bookingToken}. Data Entries:`, Array.from(formData.entries()));
   
@@ -148,7 +162,7 @@ export async function submitHauptgastAction(bookingToken: string, prevState: any
   }
   
   const data = validatedFields.data;
-  console.log("[Action submitHauptgastAction] Validated data:", data);
+  console.log("[Action submitHauptgastAction] Validated data (Hauptgast):", data);
 
   try {
     const booking = findMockBookingByToken(bookingToken);
@@ -157,52 +171,46 @@ export async function submitHauptgastAction(bookingToken: string, prevState: any
       return { message: "Buchung nicht gefunden.", errors: null, success: false };
     }
 
-    const guestSubmittedDataUpdate: Partial<GuestSubmittedData> = {
-      fullName: data.fullName, // This should be the Hauptbucher's full name, or we split guestFirstName/LastName
-      guestFirstName: data.fullName, // Assuming fullName is for the first name for now
+    // Ensure guestSubmittedData exists
+    const currentGuestData = booking.guestSubmittedData || {};
+
+    const guestSubmittedDataUpdate: GuestSubmittedData = {
+      ...currentGuestData,
+      fullName: `${data.fullName} ${data.lastName}`, // Combine for full name
+      guestFirstName: data.fullName,
       guestLastName: data.lastName,
       email: data.email,
       phone: data.phone,
-      alter: data.alter,
+      alter: data.alter ? Number(data.alter) : undefined,
       specialRequests: data.specialRequests,
       datenschutzAkzeptiert: data.datenschutz === "on",
       submittedAt: new Date().toISOString(),
-      // addressLine1: data.addressLine1, // Keep if needed, but not on new form
-      // city: data.city,
-      // postalCode: data.postalCode,
-      // country: data.country,
+      documentUrls: currentGuestData.documentUrls || [], // Preserve existing documents
     };
-
-    const documentUrls = booking.guestSubmittedData?.documentUrls || [];
-    // Simulate file upload for Vorderseite
+    
+    // Simulate file upload and add URLs
     if (data.ausweisVorderseite && data.ausweisVorderseite.size > 0) {
-        const vorderseiteUrl = `https://placehold.co/uploads/mock_${Date.now()}_vorderseite_${data.ausweisVorderseite.name.replace(/\s+/g, '_')}`;
-        documentUrls.push(vorderseiteUrl);
-        console.log(`[Action submitHauptgastAction] Mock uploaded ausweisVorderseite to ${vorderseiteUrl}`);
+        const vorderseiteUrl = `https://placehold.co/uploads/mock_hg_${Date.now()}_v_${data.ausweisVorderseite.name.replace(/\s+/g, '_')}`;
+        guestSubmittedDataUpdate.documentUrls!.push(vorderseiteUrl);
+        console.log(`[Action submitHauptgastAction] Mock uploaded Hauptgast ausweisVorderseite to ${vorderseiteUrl}`);
     }
-    // Simulate file upload for Rückseite
     if (data.ausweisRückseite && data.ausweisRückseite.size > 0) {
-        const rueckseiteUrl = `https://placehold.co/uploads/mock_${Date.now()}_rueckseite_${data.ausweisRückseite.name.replace(/\s+/g, '_')}`;
-        documentUrls.push(rueckseiteUrl);
-        console.log(`[Action submitHauptgastAction] Mock uploaded ausweisRückseite to ${rueckseiteUrl}`);
+        const rueckseiteUrl = `https://placehold.co/uploads/mock_hg_${Date.now()}_r_${data.ausweisRückseite.name.replace(/\s+/g, '_')}`;
+        guestSubmittedDataUpdate.documentUrls!.push(rueckseiteUrl);
+        console.log(`[Action submitHauptgastAction] Mock uploaded Hauptgast ausweisRückseite to ${rueckseiteUrl}`);
     }
-    guestSubmittedDataUpdate.documentUrls = documentUrls;
     
     const success = updateMockBookingByToken(bookingToken, { 
-      guestFirstName: data.fullName, // Update top-level booking names too
+      guestFirstName: data.fullName, 
       guestLastName: data.lastName,
-      guestSubmittedData: {
-        ...(booking.guestSubmittedData || {}),
-        ...guestSubmittedDataUpdate
-      }
-      // Status is not changed yet, only after the final step.
+      guestSubmittedData: guestSubmittedDataUpdate,
     });
 
     if (success) {
       console.log(`[Action submitHauptgastAction] Hauptgast data submitted successfully for token: ${bookingToken}`);
-      revalidatePath(`/buchung/${bookingToken}`, "layout"); // Revalidate layout for potential display changes
+      revalidatePath(`/buchung/${bookingToken}`, "layout"); 
       revalidatePath(`/admin/bookings/${booking.id}`, "page");
-      return { message: "Daten des Hauptgastes erfolgreich übermittelt.", errors: null, success: true };
+      return { message: "Daten des Hauptgastes erfolgreich übermittelt. Weiter zu Schritt 2.", errors: null, success: true };
     } else {
       console.error(`[Action submitHauptgastAction] Failed to update booking for token: ${bookingToken}`);
       return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false };
@@ -215,29 +223,159 @@ export async function submitHauptgastAction(bookingToken: string, prevState: any
   }
 }
 
+export async function submitMitreisendeAction(bookingToken: string, prevState: any, formData: FormData) {
+  console.log(`[Action submitMitreisendeAction] For token: ${bookingToken}. Data Entries:`, Array.from(formData.entries()));
 
-// --- Legacy Actions (keep for now or remove if fully replaced) ---
+  // --- Helper to parse FormData into structured Mitreisende array ---
+  // FormData sends data as flat key-value pairs, e.g., 'mitreisende[0][vorname]': 'John'
+  // We need to parse this into an array of objects.
+  const parsedMitreisende: Partial<Mitreisender>[] = [];
+  const tempMitreisendeMap: Record<string, Partial<Mitreisender>> = {};
+  const fileMap: Record<string, Record<string, File>> = {}; // To store files temporarily
 
-// This action is likely replaced by submitHauptgastAction logic
-export async function submitGuestDocumentsAction(bookingToken: string, prevState: any, formData: FormData) {
-  console.log(`[Action submitGuestDocumentsAction] For token: ${bookingToken}`);
-  // ... (This logic needs to be merged or deprecated)
-  return { message: "Dokument-Upload-Aktion ist veraltet. Logik in Hauptgast-Aktion integriert.", errors: null, success: true };
+  for (const [key, value] of formData.entries()) {
+    const match = key.match(/^mitreisende\[(\d+)\]\[(.+?)\]$/);
+    if (match) {
+      const index = match[1];
+      const field = match[2] as keyof Mitreisender; // Type assertion
+
+      if (!tempMitreisendeMap[index]) {
+        tempMitreisendeMap[index] = {};
+      }
+      if (!fileMap[index]) {
+        fileMap[index] = {};
+      }
+
+      if (value instanceof File) {
+        if (field === 'ausweisVorderseite' || field === 'ausweisRückseite') {
+          fileMap[index][field] = value;
+        }
+      } else if (field === 'alter' && typeof value === 'string') {
+         tempMitreisendeMap[index][field] = value === "" ? undefined : Number(value);
+      } else if (typeof value === 'string') {
+        // Explicitly cast field to keyof Mitreisender for assignment
+        (tempMitreisendeMap[index] as any)[field] = value;
+      }
+    }
+  }
+  // Convert map to array, ensuring order
+  Object.keys(tempMitreisendeMap).sort((a,b) => Number(a) - Number(b)).forEach(index => {
+    const mitreisenderData = tempMitreisendeMap[index];
+    // Assign files from fileMap
+    if (fileMap[index]?.ausweisVorderseite) {
+      mitreisenderData.ausweisVorderseiteFile = fileMap[index].ausweisVorderseite;
+    }
+    if (fileMap[index]?.ausweisRückseite) {
+      mitreisenderData.ausweisRückseiteFile = fileMap[index].ausweisRückseite;
+    }
+    parsedMitreisende.push(mitreisenderData);
+  });
+
+  console.log("[Action submitMitreisendeAction] Parsed Mitreisende data:", JSON.stringify(parsedMitreisende, null, 2));
+  
+  // Validate each mitreisender object
+  const validationResults = parsedMitreisende.map((m, idx) => {
+    // Map our File objects for validation schema
+    const dataToValidate = {
+      ...m,
+      ausweisVorderseite: m.ausweisVorderseiteFile,
+      ausweisRückseite: m.ausweisRückseiteFile,
+    };
+    return { index: idx, result: mitreisenderSchema.safeParse(dataToValidate) };
+  });
+
+  const errors: Record<string, string[]> = {};
+  let hasErrors = false;
+  validationResults.forEach(vr => {
+    if (!vr.result.success) {
+      hasErrors = true;
+      for (const [field, fieldErrors] of Object.entries(vr.result.error.flatten().fieldErrors)) {
+        errors[`mitreisende[${vr.index}].${field}`] = fieldErrors as string[];
+      }
+    }
+  });
+  
+  if (hasErrors) {
+    console.error("[Action submitMitreisendeAction] Validation failed for Mitreisende:", errors);
+    return {
+      errors,
+      message: "Fehler bei der Validierung der Daten der Mitreisenden.",
+      success: false,
+    };
+  }
+
+  const validMitreisendeData = validationResults.map(vr => (vr.result as z.SafeParseSuccess<z.infer<typeof mitreisenderSchema>>).data);
+  console.log("[Action submitMitreisendeAction] Validated Mitreisende data:", validMitreisendeData);
+
+  try {
+    const booking = findMockBookingByToken(bookingToken);
+    if (!booking) {
+      console.warn(`[Action submitMitreisendeAction] Booking not found for token: ${bookingToken}`);
+      return { message: "Buchung nicht gefunden.", errors: null, success: false };
+    }
+
+    const finalMitreisende: Mitreisender[] = [];
+    for (const m of validMitreisendeData) {
+        const mitreisenderEntry: Mitreisender = {
+            id: m.id || `mit-${Date.now()}-${Math.random().toString(16).slice(2)}`, // Generate ID if not present
+            vorname: m.vorname,
+            nachname: m.nachname,
+            alter: m.alter ? Number(m.alter) : undefined, // Ensure alter is number or undefined
+            ausweisVorderseiteUrl: undefined,
+            ausweisRückseiteUrl: undefined,
+        };
+
+        if (m.ausweisVorderseite && m.ausweisVorderseite.size > 0) {
+            mitreisenderEntry.ausweisVorderseiteUrl = `https://placehold.co/uploads/mock_m_${Date.now()}_v_${m.ausweisVorderseite.name.replace(/\s+/g, '_')}`;
+            console.log(`[Action submitMitreisendeAction] Mock uploaded Mitreisender ausweisVorderseite to ${mitreisenderEntry.ausweisVorderseiteUrl}`);
+        }
+        if (m.ausweisRückseite && m.ausweisRückseite.size > 0) {
+            mitreisenderEntry.ausweisRückseiteUrl = `https://placehold.co/uploads/mock_m_${Date.now()}_r_${m.ausweisRückseite.name.replace(/\s+/g, '_')}`;
+            console.log(`[Action submitMitreisendeAction] Mock uploaded Mitreisender ausweisRückseite to ${mitreisenderEntry.ausweisRückseiteUrl}`);
+        }
+        finalMitreisende.push(mitreisenderEntry);
+    }
+
+    const success = updateMockBookingByToken(bookingToken, {
+      guestSubmittedData: {
+        ...(booking.guestSubmittedData || {}),
+        mitreisende: finalMitreisende,
+        submittedAt: new Date().toISOString(), // Update submittedAt timestamp
+      }
+    });
+
+    if (success) {
+      console.log(`[Action submitMitreisendeAction] Mitreisende data submitted successfully for token: ${bookingToken}`);
+      revalidatePath(`/buchung/${bookingToken}`, "layout");
+      revalidatePath(`/admin/bookings/${booking.id}`, "page");
+      return { message: "Daten der Mitreisenden erfolgreich übermittelt. Weiter zu Schritt 3.", errors: null, success: true };
+    } else {
+      console.error(`[Action submitMitreisendeAction] Failed to update booking with Mitreisende for token: ${bookingToken}`);
+      return { message: "Fehler beim Aktualisieren der Buchung mit Mitreisenden.", errors: null, success: false };
+    }
+
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    console.error("[Action submitMitreisendeAction] Error submitting Mitreisende data:", error.message, error.stack);
+    return { message: "Datenbankfehler: Daten der Mitreisenden konnten nicht übermittelt werden.", errors: null, success: false };
+  }
 }
 
 
-export async function submitGuestSpecialRequestsAction(bookingToken: string, prevState: any, formData: FormData) {
-  console.log(`[Action submitGuestSpecialRequestsAction] For token: ${bookingToken}`);
-  // ... (This logic needs to be merged or deprecated)
-  // For now, let's assume this is the final step and confirms the booking.
+// Placeholder for the final step if needed
+export async function submitBookingCompletionAction(bookingToken: string, prevState: any, formData: FormData) {
+  console.log(`[Action submitBookingCompletionAction] Finalizing booking for token: ${bookingToken}`);
   const booking = findMockBookingByToken(bookingToken);
-  if (!booking) return { message: "Buchung nicht gefunden", success: false };
+  if (!booking) {
+      return { message: "Buchung nicht gefunden.", success: false, errors: null };
+  }
 
   const success = updateMockBookingByToken(bookingToken, { status: "Confirmed" });
   if (success) {
     revalidatePath(`/buchung/${bookingToken}`, "layout");
-    revalidatePath(`/admin/bookings/${booking.id}`, "page");
-    return { message: "Buchung abgeschlossen (via Placeholder).", success: true, errors: null };
+    revalidatePath(`/admin/bookings/${booking.id}`, "page"); // also revalidate specific admin booking page
+    console.log(`[Action submitBookingCompletionAction] Booking ${bookingToken} confirmed.`);
+    return { message: "Buchung erfolgreich abgeschlossen und bestätigt!", success: true, errors: null };
   }
-  return { message: "Fehler beim Bestätigen (Placeholder).", success: false, errors: null };
+  return { message: "Fehler beim Bestätigen der Buchung.", success: false, errors: null };
 }
