@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useEffect, type ReactNode, useActionState } from "react";
+import { useState, useEffect, type ReactNode, useActionState, useMemo } from "react";
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,21 +12,22 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertCircle, CheckCircle, FileUp, Loader2, UserCircle, MessageSquare } from "lucide-react";
 import { submitGuestPersonalDataAction, submitGuestDocumentsAction, submitGuestSpecialRequestsAction } from "@/lib/actions";
 import type { Booking } from "@/lib/definitions";
+import { cn } from "@/lib/utils";
 
 interface Step {
   id: string;
   name: string;
   icon: React.ElementType;
-  fields?: string[]; // For form validation feedback if needed
+  fields?: string[]; 
   Content: React.FC<StepContentProps>;
   action?: (bookingToken: string, prevState: any, formData: FormData) => Promise<any>;
 }
 
 interface StepContentProps {
   bookingToken: string;
-  bookingDetails?: Booking | null; // Pass booking details if needed for context
+  bookingDetails?: Booking | null;
   formState: FormState;
-  onNext?: () => void; // For client-side only navigation if action is not per step
+  onNext?: () => void; 
 }
 
 type FormState = {
@@ -143,24 +145,26 @@ const SpecialRequestsStep: React.FC<StepContentProps> = ({ bookingToken, formSta
 };
 
 
-const steps: Step[] = [
-  { id: "personal-data", name: "Persönliche Daten", icon: UserCircle, Content: PersonalDataStep, action: submitGuestPersonalDataAction },
-  { id: "documents", name: "Dokumente", icon: FileUp, Content: DocumentUploadStep, action: submitGuestDocumentsAction },
-  { id: "special-requests", name: "Sonderwünsche", icon: MessageSquare, Content: SpecialRequestsStep, action: submitGuestSpecialRequestsAction },
-];
-
-
 export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const [currentStep, setCurrentStep] = useState(0);
+
+  const steps: Step[] = useMemo(() => [
+    { id: "personal-data", name: "Persönliche Daten", icon: UserCircle, Content: PersonalDataStep, action: submitGuestPersonalDataAction },
+    { id: "documents", name: "Dokumente", icon: FileUp, Content: DocumentUploadStep, action: submitGuestDocumentsAction },
+    { id: "special-requests", name: "Sonderwünsche", icon: MessageSquare, Content: SpecialRequestsStep, action: submitGuestSpecialRequestsAction },
+  ], []);
+
   const [formState, formAction] = useActionState(
     (prevState: FormState, formData: FormData) => {
-      const currentAction = steps[currentStep].action;
-      if (currentAction) {
-        // Bind the bookingToken to the action
-        const boundAction = currentAction.bind(null, bookingToken);
-        return boundAction(prevState, formData);
+      // Ensure currentStep is within bounds before accessing steps[currentStep]
+      if (currentStep >= 0 && currentStep < steps.length) {
+        const currentAction = steps[currentStep].action;
+        if (currentAction) {
+          const boundAction = currentAction.bind(null, bookingToken);
+          return boundAction(prevState, formData);
+        }
       }
-      return Promise.resolve({ message: "Aktion nicht definiert", errors: null, success: false });
+      return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig", errors: null, success: false });
     },
     initialFormState
   );
@@ -177,12 +181,22 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
 
     if (formState.success && currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
+       // Reset formState for the next step to avoid carrying over success/error messages
+       // This is a common pattern, but useActionState itself doesn't auto-reset.
+       // If your actions don't reset the state, you might need a manual reset mechanism if problems arise.
     } else if (formState.success && currentStep === steps.length - 1) {
       // Final step success actions (e.g., show completion message)
       // This is handled by the ThankYouCard now
     }
-  }, [formState, toast, currentStep]);
+  }, [formState, toast, currentStep, steps.length]);
 
+
+  // Defensive check: if steps or currentStep is invalid, render nothing or an error
+  if (!steps || currentStep < 0 || currentStep >= steps.length) {
+     console.error("GuestBookingFormStepper: Invalid steps or currentStep index.", currentStep, steps);
+     return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
+  }
+  
   const ActiveStepContent = steps[currentStep].Content;
 
   if (formState.success && currentStep === steps.length - 1) {

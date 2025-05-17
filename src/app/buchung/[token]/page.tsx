@@ -1,48 +1,69 @@
 import { GuestBookingFormStepper } from "@/components/guest/GuestBookingFormStepper";
 import type { Booking } from "@/lib/definitions";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, CheckCircle } from "lucide-react"; // CheckCircle import was missing before based on usage
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-// Mock data fetching function - replace with actual data fetching
+// Mock data - In a real application, this data would be fetched from a database (e.g., Firebase Firestore)
+// based on the booking token.
+const MOCK_BOOKINGS_DB: Booking[] = [
+  { 
+    id: '1', 
+    guestFirstName: 'Max', 
+    guestLastName: 'Mustermann', 
+    price: 150.75, 
+    roomIdentifier: '101', 
+    checkInDate: new Date('2024-09-15T14:00:00Z').toISOString(), // Ensure dates are ISO strings or Date objects
+    checkOutDate: new Date('2024-09-20T11:00:00Z').toISOString(),
+    bookingToken: 'abc123xyz', 
+    status: 'Pending Guest Information', 
+    createdAt: new Date('2024-08-01T10:00:00Z').toISOString(), 
+    updatedAt: new Date('2024-08-01T10:00:00Z').toISOString() 
+  },
+  { 
+    id: '2', 
+    guestFirstName: 'Erika', 
+    guestLastName: 'Musterfrau', 
+    price: 200, 
+    roomIdentifier: 'Suite 205', 
+    checkInDate: new Date('2024-10-01T00:00:00Z').toISOString(),
+    checkOutDate: new Date('2024-10-05T00:00:00Z').toISOString(),
+    bookingToken: 'def456uvw', 
+    status: 'Confirmed', 
+    createdAt: new Date('2024-08-15T12:30:00Z').toISOString(), 
+    updatedAt: new Date('2024-08-18T15:00:00Z').toISOString(),
+    guestSubmittedData: { 
+      fullName: "Erika Musterfrau", 
+      email: "erika@example.com", 
+      phone: "0123456789",
+      addressLine1: "Musterstraße 123",
+      city: "Musterstadt",
+      postalCode: "12345",
+      country: "Deutschland",
+      submittedAt: new Date('2024-08-18T14:55:00Z')
+    }
+  },
+];
+
+// Mock data fetching function - replace with actual data fetching from your backend/Firebase
 async function getBookingByToken(token: string): Promise<Booking | null> {
-  await new Promise(resolve => setTimeout(resolve, 300)); // Simulate API delay
+  console.log(`[Server] Attempting to fetch booking for token: ${token}`);
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 300)); 
   
-  const MOCK_BOOKINGS: Booking[] = [
-     { 
-      id: '1', 
-      guestFirstName: 'Max', 
-      guestLastName: 'Mustermann', 
-      price: 150.75, 
-      roomIdentifier: '101', 
-      checkInDate: new Date('2024-09-15').toISOString(),
-      checkOutDate: new Date('2024-09-20').toISOString(),
-      bookingToken: 'abc123xyz', 
-      status: 'Pending Guest Information', 
-      createdAt: new Date().toISOString(), 
-      updatedAt: new Date().toISOString() 
-    },
-    { 
-      id: '2', 
-      guestFirstName: 'Erika', 
-      guestLastName: 'Musterfrau', 
-      price: 200, 
-      roomIdentifier: 'Suite 205', 
-      checkInDate: new Date('2024-10-01').toISOString(),
-      checkOutDate: new Date('2024-10-05').toISOString(),
-      bookingToken: 'def456uvw', 
-      status: 'Confirmed', // This one is already confirmed, guest form might show a message or be read-only
-      createdAt: new Date().toISOString(), 
-      updatedAt: new Date().toISOString(),
-      guestSubmittedData: { fullName: "Erika Musterfrau", email: "erika@example.com", phone: "0123456789"}
-    },
-  ];
+  // In a real app, you would query your database:
+  // e.g., const booking = await db.collection('bookings').where('bookingToken', '==', token).limit(1).get();
+  // if (booking.empty) return null;
+  // return booking.docs[0].data() as Booking;
+
+  const booking = MOCK_BOOKINGS_DB.find(b => b.bookingToken === token);
   
-  const booking = MOCK_BOOKINGS.find(b => b.bookingToken === token);
-  if (booking && booking.status === "Confirmed") {
-    // If already confirmed, we might not want them to edit. For now, let's return it.
-    // Or, throw an error / return a specific status.
+  if (booking) {
+    console.log(`[Server] Found booking for token ${token}:`, booking.status);
+    return booking;
+  } else {
+    console.log(`[Server] No booking found for token ${token}`);
+    return null;
   }
-  return booking || null;
 }
 
 
@@ -63,7 +84,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
 
   if (booking.status === "Confirmed" && booking.guestSubmittedData) {
      return (
-      <Card className="w-full max-w-lg mx-auto">
+      <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
           <CheckCircle className="w-12 h-12 text-green-500 mb-3" />
           <CardTitle className="text-xl">Ihre Daten wurden bereits übermittelt</CardTitle>
@@ -90,11 +111,8 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
+  // If booking is pending guest information, show the form
   return (
     <GuestBookingFormStepper bookingToken={params.token} bookingDetails={booking} />
   );
 }
-
-// Added CheckCircle import as it's used in the conditional rendering.
-import { CheckCircle } from "lucide-react";
-
