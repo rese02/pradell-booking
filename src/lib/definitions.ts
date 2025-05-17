@@ -34,6 +34,7 @@ export interface GuestSubmittedData {
   
   documentUrls?: string[]; 
   mitreisende?: Mitreisender[]; // Array of fellow travelers
+  paymentAmountSelection?: 'downpayment' | 'full_amount'; // Added for step 3
   submittedAt?: Date | string; 
 }
 
@@ -54,7 +55,7 @@ export interface Booking {
   kinder?: number;
   kleinkinder?: number;
   alterKinder?: string;
-  interneBemerkungen?: string;
+  interneBemerkungen?: string; // This could be used for "Anmerkungen (Hotel)"
 
   guestSubmittedData?: GuestSubmittedData; 
   createdAt: Date | string; 
@@ -97,5 +98,9 @@ export interface MitreisendeFormData {
     ausweisVorderseite?: File | null;
     ausweisRückseite?: File | null;
   }[];
+}
+
+export interface PaymentAmountSelectionFormData {
+  paymentSelection: 'downpayment' | 'full_amount';
 }
     
