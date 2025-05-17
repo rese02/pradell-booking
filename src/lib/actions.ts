@@ -8,10 +8,11 @@ import {
   addMockBooking, 
   findMockBookingByToken, 
   updateMockBookingByToken,
-  getMockBookings // For logging/debugging if needed
+  getMockBookings 
 } from "@/lib/mock-db";
 
-// Define Zod schemas for validation
+// --- Zod Schemas ---
+
 const createBookingSchema = z.object({
   guestFirstName: z.string().min(1, "Vorname ist erforderlich."),
   guestLastName: z.string().min(1, "Nachname ist erforderlich."),
@@ -21,8 +22,8 @@ const createBookingSchema = z.object({
   verpflegung: z.string().min(1, "Verpflegung ist erforderlich."),
   zimmertyp: z.string().min(1, "Zimmertyp ist erforderlich."),
   erwachsene: z.coerce.number().int().min(0, "Anzahl Erwachsene muss positiv sein."),
-  kinder: z.coerce.number().int().min(0, "Anzahl Kinder muss positiv sein."),
-  kleinkinder: z.coerce.number().int().min(0, "Anzahl Kleinkinder muss positiv sein."),
+  kinder: z.coerce.number().int().min(0, "Anzahl Kinder muss positiv sein.").optional(),
+  kleinkinder: z.coerce.number().int().min(0, "Anzahl Kleinkinder muss positiv sein.").optional(),
   alterKinder: z.string().optional(),
   interneBemerkungen: z.string().optional(),
 }).refine(data => {
@@ -35,22 +36,38 @@ const createBookingSchema = z.object({
     path: ["checkOutDate"],
 });
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
 
-const guestPersonalDataSchema = z.object({
-  fullName: z.string().min(1, "Vollständiger Name ist erforderlich."),
+const fileSchema = z.instanceof(File)
+  .refine((file) => file.size === 0 || file.size <= MAX_FILE_SIZE, `Maximale Dateigröße ist 5MB.`)
+  .refine(
+    (file) => file.size === 0 || ACCEPTED_IMAGE_TYPES.includes(file.type),
+    "Nur .jpg, .png und .pdf Dateien sind erlaubt."
+  ).optional();
+
+
+const hauptgastSchema = z.object({
+  fullName: z.string().min(1, "Vorname ist erforderlich."),
+  lastName: z.string().min(1, "Nachname ist erforderlich."),
   email: z.string().email("Ungültige E-Mail-Adresse."),
   phone: z.string().min(1, "Telefonnummer ist erforderlich."),
-  addressLine1: z.string().min(1, "Adresse Zeile 1 ist erforderlich."),
-  addressLine2: z.string().optional(),
-  city: z.string().min(1, "Stadt ist erforderlich."),
-  postalCode: z.string().min(1, "Postleitzahl ist erforderlich."),
-  country: z.string().min(1, "Land ist erforderlich."),
-});
-
-const guestSpecialRequestsSchema = z.object({
+  alter: z.coerce.number().int().positive("Alter muss eine positive Zahl sein.").optional().or(z.literal("")), // Allow empty string for optional number
+  ausweisVorderseite: fileSchema,
+  ausweisRückseite: fileSchema,
   specialRequests: z.string().optional(),
+  datenschutz: z.literal("on", { // Checkbox value is "on" when checked
+    errorMap: () => ({ message: "Sie müssen den Datenschutzbestimmungen zustimmen." }),
+  }),
+  // addressLine1: z.string().min(1, "Adresse Zeile 1 ist erforderlich."), // These were from old form
+  // addressLine2: z.string().optional(),
+  // city: z.string().min(1, "Stadt ist erforderlich."),
+  // postalCode: z.string().min(1, "Postleitzahl ist erforderlich."),
+  // country: z.string().min(1, "Land ist erforderlich."),
 });
 
+
+// --- Server Actions ---
 
 export async function createBookingAction(prevState: any, formData: FormData) {
   console.log("[Action createBookingAction] Received form data:", Object.fromEntries(formData.entries()));
@@ -68,8 +85,6 @@ export async function createBookingAction(prevState: any, formData: FormData) {
   const bookingData = validatedFields.data;
 
   try {
-    // Generate ID and Token
-    // For ID, ensure it's unique. Using timestamp + random for mock.
     const newBookingId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
     const newBookingToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
@@ -91,23 +106,16 @@ export async function createBookingAction(prevState: any, formData: FormData) {
       kleinkinder: bookingData.kleinkinder,
       alterKinder: bookingData.alterKinder || '',
       interneBemerkungen: bookingData.interneBemerkungen || '',
-      roomIdentifier: `${bookingData.zimmertyp}`,
+      roomIdentifier: `${bookingData.zimmertyp}`, // Simplified identifier
     };
 
     addMockBooking(newBooking);
-    console.log(`[Action createBookingAction] New booking added to mock DB. Token: ${newBookingToken}. ID: ${newBookingId}`);
+    console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
     
-    // Log current state of DB after adding
-    const currentBookings = getMockBookings();
-    console.log(`[Action createBookingAction] Mock DB state after add. Count: ${currentBookings.length}. Tokens: ${currentBookings.map(b => b.bookingToken).join(', ')}`);
-
-
-    revalidatePath("/admin/dashboard", "layout"); // Revalidate layout to ensure dashboard data is fresh
+    revalidatePath("/admin/dashboard", "layout");
     revalidatePath("/admin/bookings", "page");
     revalidatePath(`/admin/bookings/${newBookingId}`, "page"); 
-    revalidatePath(`/buchung/${newBookingToken}`, "page"); 
-
-    console.log(`[Action createBookingAction] Revalidation triggered for relevant paths.`);
+    revalidatePath(`/buchung/${newBookingToken}`, "layout"); // Revalidate layout for guest page too
 
     return {
       message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
@@ -121,150 +129,115 @@ export async function createBookingAction(prevState: any, formData: FormData) {
   }
 }
 
-export async function submitGuestPersonalDataAction(bookingToken: string, prevState: any, formData: FormData) {
-  console.log(`[Action submitGuestPersonalDataAction] For token: ${bookingToken}. Data:`, Object.fromEntries(formData.entries()));
-  const validatedFields = guestPersonalDataSchema.safeParse(Object.fromEntries(formData.entries()));
+// Renamed and updated action for the "Hauptgast" step
+export async function submitHauptgastAction(bookingToken: string, prevState: any, formData: FormData) {
+  console.log(`[Action submitHauptgastAction] For token: ${bookingToken}. Data Entries:`, Array.from(formData.entries()));
+  
+  const rawFormData = Object.fromEntries(formData.entries());
+  console.log("[Action submitHauptgastAction] Raw form data for validation:", rawFormData);
+
+  const validatedFields = hauptgastSchema.safeParse(rawFormData);
 
   if (!validatedFields.success) {
-    console.error("[Action submitGuestPersonalDataAction] Validation failed:", validatedFields.error.flatten().fieldErrors);
+    console.error("[Action submitHauptgastAction] Validation failed:", validatedFields.error.flatten().fieldErrors);
     return {
       errors: validatedFields.error.flatten().fieldErrors,
-      message: "Fehler bei der Validierung der persönlichen Daten.",
+      message: "Fehler bei der Validierung der Daten des Hauptgastes.",
       success: false,
     };
   }
+  
+  const data = validatedFields.data;
+  console.log("[Action submitHauptgastAction] Validated data:", data);
 
   try {
     const booking = findMockBookingByToken(bookingToken);
     if (!booking) {
-      console.warn(`[Action submitGuestPersonalDataAction] Booking not found for token: ${bookingToken}`);
+      console.warn(`[Action submitHauptgastAction] Booking not found for token: ${bookingToken}`);
       return { message: "Buchung nicht gefunden.", errors: null, success: false };
     }
 
     const guestSubmittedDataUpdate: Partial<GuestSubmittedData> = {
-      ...validatedFields.data,
+      fullName: data.fullName, // This should be the Hauptbucher's full name, or we split guestFirstName/LastName
+      guestFirstName: data.fullName, // Assuming fullName is for the first name for now
+      guestLastName: data.lastName,
+      email: data.email,
+      phone: data.phone,
+      alter: data.alter,
+      specialRequests: data.specialRequests,
+      datenschutzAkzeptiert: data.datenschutz === "on",
       submittedAt: new Date().toISOString(),
+      // addressLine1: data.addressLine1, // Keep if needed, but not on new form
+      // city: data.city,
+      // postalCode: data.postalCode,
+      // country: data.country,
     };
+
+    const documentUrls = booking.guestSubmittedData?.documentUrls || [];
+    // Simulate file upload for Vorderseite
+    if (data.ausweisVorderseite && data.ausweisVorderseite.size > 0) {
+        const vorderseiteUrl = `https://placehold.co/uploads/mock_${Date.now()}_vorderseite_${data.ausweisVorderseite.name.replace(/\s+/g, '_')}`;
+        documentUrls.push(vorderseiteUrl);
+        console.log(`[Action submitHauptgastAction] Mock uploaded ausweisVorderseite to ${vorderseiteUrl}`);
+    }
+    // Simulate file upload for Rückseite
+    if (data.ausweisRückseite && data.ausweisRückseite.size > 0) {
+        const rueckseiteUrl = `https://placehold.co/uploads/mock_${Date.now()}_rueckseite_${data.ausweisRückseite.name.replace(/\s+/g, '_')}`;
+        documentUrls.push(rueckseiteUrl);
+        console.log(`[Action submitHauptgastAction] Mock uploaded ausweisRückseite to ${rueckseiteUrl}`);
+    }
+    guestSubmittedDataUpdate.documentUrls = documentUrls;
     
     const success = updateMockBookingByToken(bookingToken, { 
+      guestFirstName: data.fullName, // Update top-level booking names too
+      guestLastName: data.lastName,
       guestSubmittedData: {
         ...(booking.guestSubmittedData || {}),
         ...guestSubmittedDataUpdate
       }
+      // Status is not changed yet, only after the final step.
     });
 
     if (success) {
-      console.log(`[Action submitGuestPersonalDataAction] Personal data submitted successfully for token: ${bookingToken}`);
-      revalidatePath(`/buchung/${bookingToken}`, "page");
-      revalidatePath("/admin/dashboard", "layout"); 
-      revalidatePath("/admin/bookings", "page");
+      console.log(`[Action submitHauptgastAction] Hauptgast data submitted successfully for token: ${bookingToken}`);
+      revalidatePath(`/buchung/${bookingToken}`, "layout"); // Revalidate layout for potential display changes
       revalidatePath(`/admin/bookings/${booking.id}`, "page");
-      return { message: "Persönliche Daten erfolgreich übermittelt.", errors: null, success: true };
+      return { message: "Daten des Hauptgastes erfolgreich übermittelt.", errors: null, success: true };
     } else {
-      console.error(`[Action submitGuestPersonalDataAction] Failed to update booking for token: ${bookingToken}`);
+      console.error(`[Action submitHauptgastAction] Failed to update booking for token: ${bookingToken}`);
       return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false };
     }
 
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
-    console.error("[Action submitGuestPersonalDataAction] Error submitting personal data:", error.message, error.stack);
-    return { message: "Datenbankfehler: Persönliche Daten konnten nicht übermittelt werden.", errors: null, success: false };
+    console.error("[Action submitHauptgastAction] Error submitting Hauptgast data:", error.message, error.stack);
+    return { message: "Datenbankfehler: Daten konnten nicht übermittelt werden.", errors: null, success: false };
   }
 }
 
+
+// --- Legacy Actions (keep for now or remove if fully replaced) ---
+
+// This action is likely replaced by submitHauptgastAction logic
 export async function submitGuestDocumentsAction(bookingToken: string, prevState: any, formData: FormData) {
   console.log(`[Action submitGuestDocumentsAction] For token: ${bookingToken}`);
-  const documents = formData.getAll('documents') as File[]; 
-  console.log(`[Action submitGuestDocumentsAction] Uploading documents:`, documents.map(d => ({name: d.name, size: d.size})));
-
-  const booking = findMockBookingByToken(bookingToken);
-  if (!booking) {
-    console.warn(`[Action submitGuestDocumentsAction] Booking not found for token: ${bookingToken}`);
-    return { message: "Buchung nicht gefunden.", errors: null, success: false };
-  }
-
-  let message = "Dokumente 'simuliert' hochgeladen.";
-  const uploadedDocumentUrls: string[] = booking.guestSubmittedData?.documentUrls || [];
-
-  if (documents.length === 0 || documents.every(doc => doc.size === 0)) {
-    console.log("[Action submitGuestDocumentsAction] No documents uploaded or all files are empty.");
-    message = "Keine neuen Dokumente zum Hochladen ausgewählt.";
-  } else {
-    for (const doc of documents) {
-      if(doc.size > 0) { // Only process files with content
-        // In a real app, upload to cloud storage here and get URL
-        const mockUrl = `https://placehold.co/uploads/mock_${Date.now()}_${doc.name.replace(/\s+/g, '_')}`;
-        uploadedDocumentUrls.push(mockUrl);
-        console.log(`[Action submitGuestDocumentsAction] Mock uploaded ${doc.name} to ${mockUrl}`);
-      } else {
-        console.log(`[Action submitGuestDocumentsAction] Skipped empty file: ${doc.name}`);
-      }
-    }
-  }
-  
-  const success = updateMockBookingByToken(bookingToken, { 
-    guestSubmittedData: {
-      ...(booking.guestSubmittedData || {}),
-      documentUrls: uploadedDocumentUrls,
-      submittedAt: booking.guestSubmittedData?.submittedAt || new Date().toISOString()
-    }
-  });
-
-  if (success) {
-    console.log(`[Action submitGuestDocumentsAction] Documents updated for token: ${bookingToken}`);
-    revalidatePath(`/buchung/${bookingToken}`, "page");
-    revalidatePath(`/admin/bookings/${booking.id}`, "page");
-    return { message, errors: null, success: true };
-  } else {
-    console.error(`[Action submitGuestDocumentsAction] Failed to update documents for token: ${bookingToken}`);
-    return { message: "Fehler beim Aktualisieren der Dokumente.", errors: null, success: false };
-  }
+  // ... (This logic needs to be merged or deprecated)
+  return { message: "Dokument-Upload-Aktion ist veraltet. Logik in Hauptgast-Aktion integriert.", errors: null, success: true };
 }
 
 
 export async function submitGuestSpecialRequestsAction(bookingToken: string, prevState: any, formData: FormData) {
-  console.log(`[Action submitGuestSpecialRequestsAction] For token: ${bookingToken}. Data:`, Object.fromEntries(formData.entries()));
-  const validatedFields = guestSpecialRequestsSchema.safeParse(Object.fromEntries(formData.entries()));
+  console.log(`[Action submitGuestSpecialRequestsAction] For token: ${bookingToken}`);
+  // ... (This logic needs to be merged or deprecated)
+  // For now, let's assume this is the final step and confirms the booking.
+  const booking = findMockBookingByToken(bookingToken);
+  if (!booking) return { message: "Buchung nicht gefunden", success: false };
 
-  if (!validatedFields.success) {
-    console.error("[Action submitGuestSpecialRequestsAction] Validation failed:", validatedFields.error.flatten().fieldErrors);
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Fehler bei der Validierung der Sonderwünsche.",
-      success: false,
-    };
+  const success = updateMockBookingByToken(bookingToken, { status: "Confirmed" });
+  if (success) {
+    revalidatePath(`/buchung/${bookingToken}`, "layout");
+    revalidatePath(`/admin/bookings/${booking.id}`, "page");
+    return { message: "Buchung abgeschlossen (via Placeholder).", success: true, errors: null };
   }
-
-  try {
-    const booking = findMockBookingByToken(bookingToken);
-    if (!booking) {
-      console.warn(`[Action submitGuestSpecialRequestsAction] Booking not found for token: ${bookingToken}`);
-      return { message: "Buchung nicht gefunden.", errors: null, success: false };
-    }
-
-    const success = updateMockBookingByToken(bookingToken, {
-      guestSubmittedData: {
-        ...(booking.guestSubmittedData || {}),
-        specialRequests: validatedFields.data.specialRequests || '',
-        submittedAt: booking.guestSubmittedData?.submittedAt || new Date().toISOString(),
-      },
-      status: "Confirmed" // Final step, so confirm the booking
-    });
-
-    if (success) {
-      console.log(`[Action submitGuestSpecialRequestsAction] Special requests submitted and booking confirmed for token: ${bookingToken}`);
-      revalidatePath(`/buchung/${bookingToken}`, "page");
-      revalidatePath("/admin/dashboard", "layout");
-      revalidatePath("/admin/bookings", "page");
-      revalidatePath(`/admin/bookings/${booking.id}`, "page");
-      return { message: "Sonderwünsche erfolgreich übermittelt. Buchung abgeschlossen!", success: true, errors: null };
-    } else {
-      console.error(`[Action submitGuestSpecialRequestsAction] Failed to update special requests for token: ${bookingToken}`);
-      return { message: "Fehler beim Aktualisieren der Sonderwünsche.", success: false, errors: null };
-    }
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    console.error("[Action submitGuestSpecialRequestsAction] Error submitting special requests:", error.message, error.stack);
-    return { message: "Datenbankfehler: Sonderwünsche konnten nicht übermittelt werden.", success: false, errors: null };
-  }
+  return { message: "Fehler beim Bestätigen (Placeholder).", success: false, errors: null };
 }

@@ -3,17 +3,27 @@ export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation
 
 export interface GuestSubmittedData {
   id?: string; 
-  fullName?: string;
+  // Fields from new Hauptgast form
+  fullName?: string; // Used for Hauptgast Vorname in form
+  guestFirstName?: string; // Could be derived from fullName or specific
+  guestLastName?: string; // Hauptgast Nachname
+  email?: string;
+  phone?: string;
+  alter?: number;
+  ausweisVorderseiteUrl?: string; // Store URL after upload
+  ausweisRückseiteUrl?: string;  // Store URL after upload
+  specialRequests?: string;
+  datenschutzAkzeptiert?: boolean;
+  
+  // Legacy fields (can be removed if not used by Hauptgast form directly for address)
   addressLine1?: string;
   addressLine2?: string;
   city?: string;
   postalCode?: string;
   country?: string;
-  email?: string;
-  phone?: string;
-  documentUrls?: string[]; 
-  specialRequests?: string;
-  submittedAt?: Date | string; // Keep consistent with Booking dates
+  
+  documentUrls?: string[]; // General documents, can combine with new specific ones
+  submittedAt?: Date | string; 
 }
 
 export interface Booking {
@@ -21,13 +31,12 @@ export interface Booking {
   guestFirstName: string;
   guestLastName: string;
   price: number;
-  roomIdentifier: string; // This might be derived from zimmertyp or a specific assigned room number later
+  roomIdentifier: string; 
   checkInDate?: Date | string; 
   checkOutDate?: Date | string; 
   bookingToken: string; 
   status: BookingStatus;
   
-  // Fields from the new booking form
   verpflegung?: string;
   zimmertyp?: string;
   erwachsene?: number;
@@ -46,32 +55,27 @@ export interface CreateBookingFormData {
   guestFirstName: string;
   guestLastName: string;
   price: number;
-  checkInDate: string; // Dates as strings from form input for yyyy-MM-dd format
+  checkInDate: string; 
   checkOutDate: string;
   verpflegung: string;
   zimmertyp: string;
   erwachsene: number;
-  kinder?: number; // Optional if 0
-  kleinkinder?: number; // Optional if 0
+  kinder?: number; 
+  kleinkinder?: number; 
   alterKinder?: string;
   interneBemerkungen?: string;
 }
 
-// For GuestBookingFormStepper (Step 1)
-export interface GuestBookingStep1FormData {
-  fullName: string;
+// For GuestBookingFormStepper (Step 1 - Hauptgast)
+export interface HauptgastFormData {
+  fullName: string; // Vorname on form
+  lastName: string; // Nachname on form
   email: string;
   phone: string;
-  addressLine1: string;
-  addressLine2?: string;
-  city: string;
-  postalCode: string;
-  country: string;
-}
-
-// For GuestBookingFormStepper (Step 3)
-export interface GuestBookingStep3FormData {
+  alter?: number;
+  ausweisVorderseite?: File; // File object from input
+  ausweisRückseite?: File;  // File object from input
   specialRequests?: string;
+  datenschutz: boolean; // From checkbox
 }
-
     

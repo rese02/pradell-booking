@@ -8,28 +8,31 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, CheckCircle, FileUp, Loader2, UserCircle, MessageSquare, Info } from "lucide-react";
-import { submitGuestPersonalDataAction, submitGuestDocumentsAction, submitGuestSpecialRequestsAction } from "@/lib/actions";
-import type { Booking } from "@/lib/definitions";
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion } from "lucide-react";
+import { submitHauptgastAction } from "@/lib/actions"; // Updated action name
+import type { Booking, GuestSubmittedData } from "@/lib/definitions";
 import { cn } from "@/lib/utils";
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
+import { PradellLogo } from "@/components/shared/PradellLogo";
+import Link from "next/link";
 
 interface Step {
   id: string;
   name: string;
-  icon: React.ElementType;
-  fields?: string[];
+  Icon: React.ElementType; // Icon for the form content section
+  StepIcon: React.ElementType; // Icon for the stepper progress display
   Content: React.FC<StepContentProps>;
   action?: (bookingToken: string, prevState: any, formData: FormData) => Promise<any>;
 }
 
 interface StepContentProps {
   bookingToken: string;
-  bookingDetails?: Booking | null;
+  bookingDetails?: Booking | null; // Make bookingDetails optional as it might not be available initially
   formState: FormState;
-  onNext?: () => void;
+  onNext?: () => void; // Optional: for client-side only navigation if needed
 }
 
 type FormState = {
@@ -40,110 +43,167 @@ type FormState = {
 
 const initialFormState: FormState = { message: null, errors: null, success: false };
 
-// Helper function to format Zod errors for display
 const getErrorMessage = (fieldName: string, errors: FormState['errors']): string | undefined => {
   return errors?.[fieldName]?.[0];
 };
 
-
-// Step 1: Personal Data
-const PersonalDataStep: React.FC<StepContentProps> = ({ bookingToken, formState }) => {
+// Step 1: Hauptgast
+const HauptgastStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetails, formState }) => {
   const { pending } = useFormStatus();
+  const [fileNameVorderseite, setFileNameVorderseite] = useState<string | null>(null);
+  const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
+
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold">Ihre Daten (Hauptbucher)</h2>
+        <p className="text-sm text-muted-foreground">Bitte füllen Sie die folgenden Felder aus.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <Label htmlFor="fullName">Vollständiger Name</Label>
-          <Input id="fullName" name="fullName" required />
+          <Label htmlFor="fullName" className="flex items-center mb-1"><UserCircle className="w-4 h-4 mr-2 text-muted-foreground" />Vorname</Label>
+          <Input id="fullName" name="fullName" defaultValue={bookingDetails?.guestFirstName || ""} placeholder="Ihr Vorname" />
           {getErrorMessage("fullName", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("fullName", formState.errors)}</p>}
         </div>
         <div>
-          <Label htmlFor="email">E-Mail</Label>
-          <Input id="email" name="email" type="email" required />
+          <Label htmlFor="lastName" className="flex items-center mb-1"><UserCircle className="w-4 h-4 mr-2 text-muted-foreground" />Nachname</Label>
+          <Input id="lastName" name="lastName" defaultValue={bookingDetails?.guestLastName || ""} placeholder="Ihr Nachname" />
+          {getErrorMessage("lastName", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("lastName", formState.errors)}</p>}
+        </div>
+         <div>
+          <Label htmlFor="email" className="flex items-center mb-1"><Mail className="w-4 h-4 mr-2 text-muted-foreground" />E-Mail</Label>
+          <Input id="email" name="email" type="email" defaultValue={bookingDetails?.guestSubmittedData?.email || ""} placeholder="max.mustermann@email.com" />
           {getErrorMessage("email", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("email", formState.errors)}</p>}
         </div>
-      </div>
-      <div>
-        <Label htmlFor="phone">Telefonnummer</Label>
-        <Input id="phone" name="phone" required />
-        {getErrorMessage("phone", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("phone", formState.errors)}</p>}
-      </div>
-      <div>
-        <Label htmlFor="addressLine1">Adresse Zeile 1</Label>
-        <Input id="addressLine1" name="addressLine1" required />
-        {getErrorMessage("addressLine1", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("addressLine1", formState.errors)}</p>}
-      </div>
-      <div>
-        <Label htmlFor="addressLine2">Adresse Zeile 2 (Optional)</Label>
-        <Input id="addressLine2" name="addressLine2" />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <Label htmlFor="city">Stadt</Label>
-          <Input id="city" name="city" required />
-          {getErrorMessage("city", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("city", formState.errors)}</p>}
-        </div>
-        <div>
-          <Label htmlFor="postalCode">Postleitzahl</Label>
-          <Input id="postalCode" name="postalCode" required />
-          {getErrorMessage("postalCode", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("postalCode", formState.errors)}</p>}
-        </div>
-        <div>
-          <Label htmlFor="country">Land</Label>
-          <Input id="country" name="country" required />
-          {getErrorMessage("country", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("country", formState.errors)}</p>}
+          <Label htmlFor="phone" className="flex items-center mb-1"><Phone className="w-4 h-4 mr-2 text-muted-foreground" />Telefon</Label>
+          <Input id="phone" name="phone" defaultValue={bookingDetails?.guestSubmittedData?.phone || ""} placeholder="+49 123 456789" />
+          {getErrorMessage("phone", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("phone", formState.errors)}</p>}
         </div>
       </div>
+      <div>
+        <Label htmlFor="alter" className="flex items-center mb-1"><CalendarDays className="w-4 h-4 mr-2 text-muted-foreground" />Alter (optional)</Label>
+        <Input id="alter" name="alter" type="number" placeholder="30" />
+        {getErrorMessage("alter", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("alter", formState.errors)}</p>}
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="text-lg font-semibold">Ausweisdokumente (optional)</h3>
+        <div>
+          <Label htmlFor="ausweisVorderseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Vorderseite)</Label>
+          <div className="flex items-center gap-2">
+            <Input 
+              id="ausweisVorderseite" 
+              name="ausweisVorderseite" 
+              type="file" 
+              className="hidden"
+              onChange={(e) => setFileNameVorderseite(e.target.files?.[0]?.name || null)}
+              accept=".jpg,.jpeg,.png,.pdf" 
+            />
+            <Button asChild variant="outline" size="sm">
+              <Label htmlFor="ausweisVorderseite" className="cursor-pointer">
+                <FileUp className="w-4 h-4 mr-2"/> Wählen
+              </Label>
+            </Button>
+            <span className="text-sm text-muted-foreground">{fileNameVorderseite || "Keine Datei ausgewählt"}</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Foto oder PDF (.jpg, .png, .pdf, max 5MB)</p>
+          {getErrorMessage("ausweisVorderseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("ausweisVorderseite", formState.errors)}</p>}
+        </div>
+        <div>
+          <Label htmlFor="ausweisRückseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Rückseite)</Label>
+           <div className="flex items-center gap-2">
+            <Input 
+              id="ausweisRückseite" 
+              name="ausweisRückseite" 
+              type="file" 
+              className="hidden"
+              onChange={(e) => setFileNameRückseite(e.target.files?.[0]?.name || null)}
+              accept=".jpg,.jpeg,.png,.pdf"
+            />
+             <Button asChild variant="outline" size="sm">
+              <Label htmlFor="ausweisRückseite" className="cursor-pointer">
+                <FileUp className="w-4 h-4 mr-2"/> Wählen
+              </Label>
+            </Button>
+            <span className="text-sm text-muted-foreground">{fileNameRückseite || "Keine Datei ausgewählt"}</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">Foto oder PDF (.jpg, .png, .pdf, max 5MB)</p>
+          {getErrorMessage("ausweisRückseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("ausweisRückseite", formState.errors)}</p>}
+        </div>
+      </div>
+
+      <div>
+        <Label htmlFor="specialRequests" className="flex items-center mb-1"><Info className="w-4 h-4 mr-2 text-muted-foreground" />Ihre Anmerkungen (optional)</Label>
+        <Textarea id="specialRequests" name="specialRequests" placeholder="Haben Sie spezielle Wünsche?" rows={3} />
+        {getErrorMessage("specialRequests", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("specialRequests", formState.errors)}</p>}
+      </div>
+      
+      <div className="flex items-start space-x-3 p-4 border rounded-md bg-muted/30">
+        <Checkbox id="datenschutz" name="datenschutz" />
+        <div className="grid gap-1.5 leading-none">
+          <Label htmlFor="datenschutz" className="flex items-center">
+            <ShieldCheck className="w-4 h-4 mr-2 text-muted-foreground" />Datenschutz *
+          </Label>
+          <p className="text-sm text-muted-foreground">
+            Ich bestätige hiermit, die <Link href="/datenschutz" target="_blank" className="underline text-primary">Datenschutzbestimmungen</Link> gelesen zu haben und stimme der Verarbeitung meiner Daten zu.
+          </p>
+          {getErrorMessage("datenschutz", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("datenschutz", formState.errors)}</p>}
+        </div>
+      </div>
+
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Weiter
+        Weiter zu Schritt 2
       </Button>
     </div>
   );
 };
 
-// Step 2: Document Upload
-const DocumentUploadStep: React.FC<StepContentProps> = ({ bookingToken, formState }) => {
+// Placeholder for Step 2: Mitreisende
+const MitreisendeStep: React.FC<StepContentProps> = ({ formState }) => {
   const { pending } = useFormStatus();
-  const [fileNames, setFileNames] = useState<string[]>([]);
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      setFileNames(Array.from(event.target.files).map(file => file.name));
-    } else {
-      setFileNames([]);
-    }
-  };
-
   return (
-    <div className="space-y-4">
-      <Label htmlFor="documents">Dokumente hochladen (z.B. Ausweis)</Label>
-      <Input id="documents" name="documents" type="file" multiple onChange={handleFileChange} />
-      {fileNames.length > 0 && (
-        <div className="mt-2 text-sm text-muted-foreground">
-          Ausgewählte Dateien: {fileNames.join(', ')}
-        </div>
-      )}
-      <p className="text-xs text-muted-foreground">
-        Sie können mehrere Dateien auswählen. Max. Dateigröße pro Datei: 5MB. Akzeptierte Formate: JPG, PNG, PDF.
-      </p>
-      {getErrorMessage("documents", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("documents", formState.errors)}</p>}
+    <div>
+      <h2 className="text-xl font-semibold">Mitreisende</h2>
+      <p className="text-sm text-muted-foreground mb-4">Angaben zu weiteren Gästen (falls zutreffend).</p>
+      {/* TODO: Implement fields for additional guests */}
+      <p className="text-center text-muted-foreground py-8">Dieser Schritt ist noch in Bearbeitung.</p>
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Weiter
+        Weiter zu Schritt 3
       </Button>
     </div>
   );
 };
 
-// Step 3: Special Requests
-const SpecialRequestsStep: React.FC<StepContentProps> = ({ bookingToken, formState }) => {
+// Placeholder for Step 3: Zahlungswahl
+const ZahlungswahlStep: React.FC<StepContentProps> = ({ formState }) => {
   const { pending } = useFormStatus();
   return (
-    <div className="space-y-4">
-      <Label htmlFor="specialRequests">Sonderwünsche (Optional)</Label>
-      <Textarea id="specialRequests" name="specialRequests" placeholder="z.B. Allergien, späte Anreise, Zimmerpräferenzen..." rows={4}/>
-      {getErrorMessage("specialRequests", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("specialRequests", formState.errors)}</p>}
+    <div>
+      <h2 className="text-xl font-semibold">Zahlungswahl</h2>
+      <p className="text-sm text-muted-foreground mb-4">Wählen Sie Ihre bevorzugte Zahlungsmethode.</p>
+      {/* TODO: Implement payment method selection */}
+      <p className="text-center text-muted-foreground py-8">Dieser Schritt ist noch in Bearbeitung.</p>
+      <Button type="submit" className="w-full md:w-auto" disabled={pending}>
+        {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Weiter zu Schritt 4
+      </Button>
+    </div>
+  );
+};
+
+// Placeholder for Step 4: Zahlungsinfo
+const ZahlungsinfoStep: React.FC<StepContentProps> = ({ formState }) => {
+  const { pending } = useFormStatus();
+  return (
+    <div>
+      <h2 className="text-xl font-semibold">Zahlungsinformationen</h2>
+      <p className="text-sm text-muted-foreground mb-4">Geben Sie Ihre Zahlungsdetails ein.</p>
+      {/* TODO: Implement payment details form */}
+      <p className="text-center text-muted-foreground py-8">Dieser Schritt ist noch in Bearbeitung.</p>
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Buchung abschließen
@@ -152,44 +212,33 @@ const SpecialRequestsStep: React.FC<StepContentProps> = ({ bookingToken, formSta
   );
 };
 
-const formatVerpflegung = (verpflegung?: string) => {
-  if (!verpflegung) return "";
-  switch (verpflegung.toLowerCase()) {
-    case "fruehstueck": return "Frühstück";
-    case "halbpension": return "Halbpension";
-    case "vollpension": return "Vollpension";
-    case "ohne": return "Ohne Verpflegung";
-    default: return verpflegung;
-  }
-};
 
-const formatZimmertyp = (zimmertyp?: string) => {
-  if (!zimmertyp) return "Standard";
-  switch (zimmertyp.toLowerCase()) {
-    case "standard": return "Standard Zimmer";
-    case "einzelzimmer": return "Einzelzimmer";
-    case "doppelzimmer": return "Doppelzimmer";
-    case "suite": return "Suite";
-    case "familienzimmer": return "Familienzimmer";
-    default: return zimmertyp;
-  }
-};
-
-
-export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
+export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const [currentStep, setCurrentStep] = useState(0);
+  // Use state for bookingDetails to allow potential updates if we fetch them client-side later
+  const [bookingDetails, setBookingDetails] = useState(initialBookingDetails); 
+
+  console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Current Step: ${currentStep}. Initial Booking Details:`, initialBookingDetails ? {...initialBookingDetails, guestSubmittedData: !!initialBookingDetails.guestSubmittedData} : null);
+
 
   const steps: Step[] = useMemo(() => [
-    { id: "personal-data", name: "Persönliche Daten", icon: UserCircle, Content: PersonalDataStep, action: submitGuestPersonalDataAction },
-    { id: "documents", name: "Dokumente (Optional)", icon: FileUp, Content: DocumentUploadStep, action: submitGuestDocumentsAction },
-    { id: "special-requests", name: "Sonderwünsche", icon: MessageSquare, Content: SpecialRequestsStep, action: submitGuestSpecialRequestsAction },
+    { id: "hauptgast", name: "Hauptgast", Icon: UserCircle, StepIcon: UserCircle, Content: HauptgastStep, action: submitHauptgastAction },
+    { id: "mitreisende", name: "Mitreisende", Icon: Users, StepIcon: Users, Content: MitreisendeStep, action: async () => ({success: true, message: "Platzhalter Mitreisende übersprungen"}) }, // Placeholder action
+    { id: "zahlungswahl", name: "Zahlungswahl", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungswahlStep, action: async () => ({success: true, message: "Platzhalter Zahlungswahl übersprungen"}) }, // Placeholder action
+    { id: "zahlungsinfo", name: "Zahlungsinfo", Icon: ShieldQuestion, StepIcon: ShieldQuestion, Content: ZahlungsinfoStep, action: async () => ({success: true, message: "Platzhalter Zahlungsinfo übersprungen"}) }, // Placeholder action
+    // The 5th step "Bestätigung" is handled by the success screen after the last action
   ], []);
+  
+  const totalDisplaySteps = 5; // For the visual stepper: Hauptgast, Mitreisende, Zahlungswahl, Zahlungsinfo, Bestätigung
 
   const [formState, formAction] = useActionState(
-    (prevState: FormState, formData: FormData) => {
+    async (prevState: FormState, formData: FormData) => {
       if (currentStep >= 0 && currentStep < steps.length) {
         const currentAction = steps[currentStep].action;
         if (currentAction) {
+          // For file inputs, ensure they are correctly passed in formData.
+          // For 'HauptgastStep', 'ausweisVorderseite' and 'ausweisRückseite' are file inputs.
+          console.log(`[GuestBookingFormStepper FormAction] Executing action for step: ${steps[currentStep].id}`);
           return currentAction(bookingToken, prevState, formData);
         }
       }
@@ -210,9 +259,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
       });
     }
 
-    if (formState.success && currentStep < steps.length - 1) {
+    if (formState.success && currentStep < steps.length -1) { // if successful and not the last action step
       setCurrentStep(prev => prev + 1);
     }
+    // If it's the last action step and successful, the success screen below will handle it.
   }, [formState, toast, currentStep, steps]);
 
 
@@ -220,112 +270,120 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
      console.error("[GuestBookingFormStepper] Invalid steps array or currentStep index.", currentStep, steps);
      return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
   }
-
+  
+  // Success screen after the final actual step (e.g., Zahlungsinfo)
   if (formState.success && currentStep === steps.length - 1) {
     return (
-      <Card className="w-full max-w-2xl mx-auto shadow-xl">
-        <CardHeader className="items-center text-center">
-          <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
-          <CardTitle className="text-2xl">Buchung erfolgreich abgeschlossen!</CardTitle>
-          <CardDescription>
-            Vielen Dank, {bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center">
-          <p>Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>
-          <p className="mt-2 text-muted-foreground">Sie können diese Seite nun schließen.</p>
-        </CardContent>
-      </Card>
+       <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <PradellLogo className="mb-8" />
+        <Card className="w-full shadow-xl">
+            <CardHeader className="items-center text-center">
+            <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+            <CardTitle className="text-2xl">Buchung erfolgreich vervollständigt!</CardTitle>
+            <CardDescription>
+                Vielen Dank, {bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.
+            </CardDescription>
+            </CardHeader>
+            <CardContent className="text-center">
+            <p>Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>
+            <p className="mt-2 text-muted-foreground">Sie können diese Seite nun schließen.</p>
+            </CardContent>
+        </Card>
+      </div>
     );
   }
   
-  if (currentStep >= steps.length) {
-     console.warn("[GuestBookingFormStepper] currentStep is out of bounds (>= steps.length) but not yet caught by success condition. Current step:", currentStep, "Steps length:", steps.length);
+  // If currentStep is somehow out of bounds but not yet caught by success condition
+  if (currentStep >= steps.length && !(formState.success && currentStep === steps.length -1)) {
+     console.warn("[GuestBookingFormStepper] currentStep is out of bounds. Current step:", currentStep, "Steps length:", steps.length);
     return (
-         <Card className="w-full max-w-2xl mx-auto shadow-xl">
-            <CardHeader className="items-center text-center">
-              <Info className="w-16 h-16 text-blue-500 mb-4" />
-              <CardTitle className="text-2xl">Formularstatus</CardTitle>
-            </CardHeader>
-            <CardContent className="text-center">
-              <CardDescription>Das Formular wurde bereits abgeschlossen oder befindet sich in einem unerwarteten Zustand.</CardDescription>
-            </CardContent>
-        </Card>
+        <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+            <PradellLogo className="mb-8" />
+            <Card className="w-full shadow-xl">
+                <CardHeader className="items-center text-center">
+                <Info className="w-16 h-16 text-blue-500 mb-4" />
+                <CardTitle className="text-2xl">Formularstatus</CardTitle>
+                </CardHeader>
+                <CardContent className="text-center">
+                <CardDescription>Das Formular wurde bereits abgeschlossen oder befindet sich in einem unerwarteten Zustand.</CardDescription>
+                </CardContent>
+            </Card>
+        </div>
     );
   }
 
   const ActiveStepContent = steps[currentStep].Content;
+  const stepNumberForDisplay = currentStep + 1; // 1-based index for display
 
-  const numAdults = bookingDetails?.erwachsene ?? 0;
-  const numChildren = bookingDetails?.kinder ?? 0;
-  const numInfants = bookingDetails?.kleinkinder ?? 0;
+  const stepperLabels = ["Hauptgast", "Mitreisende", "Zahlungswahl", "Zahlungsinfo", "Bestätigung"];
+
 
   return (
-    <Card className="w-full max-w-2xl mx-auto shadow-xl">
-      <CardHeader>
-        <div className="mb-6">
-          <ol className="flex items-center w-full">
-            {steps.map((step, index) => (
-              <li
-                key={step.id}
-                className={cn(
-                  "flex w-full items-center",
-                  index < steps.length -1 ? "after:content-[''] after:w-full after:h-1 after:border-b after:border-4 after:inline-block" : "",
-                  index <= currentStep ? "after:border-primary" : "after:border-muted",
-                  index < currentStep ? "text-primary" : index === currentStep ? "text-primary font-semibold" : "text-muted-foreground"
-                )}
-              >
+    <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <PradellLogo className="mb-8" />
+      <CardTitle className="text-3xl font-bold text-center mb-2">Buchung vervollständigen</CardTitle>
+      <p className="text-center text-muted-foreground mb-10">Schritt {stepNumberForDisplay} von {totalDisplaySteps}</p>
+      
+      {/* Stepper Visual */}
+      <div className="mb-12">
+        <ol className="flex items-center w-full">
+          {stepperLabels.map((label, index) => (
+            <li
+              key={label}
+              className={cn(
+                "flex w-full items-center",
+                index < totalDisplaySteps - 1 ? "after:content-[''] after:w-full after:h-0.5 after:border-b after:border-muted after:inline-block" : "",
+                index < currentStep ? "after:border-primary" : "",
+                index === currentStep && "font-semibold"
+              )}
+            >
+              <span className={cn(
+                "flex flex-col items-center justify-center text-center",
+              )}>
                 <span className={cn(
-                  "flex items-center justify-center w-10 h-10 rounded-full lg:h-12 lg:w-12 shrink-0",
-                  index <= currentStep ? "bg-primary text-primary-foreground" : "bg-muted"
+                    "flex items-center justify-center w-8 h-8 rounded-full text-sm shrink-0 mb-1 lg:w-10 lg:h-10",
+                    index < currentStep ? "bg-primary text-primary-foreground" : 
+                    index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" : 
+                    "bg-muted text-muted-foreground border"
                 )}>
-                  <step.icon className="w-5 h-5 lg:w-6 lg:h-6" />
+                  {index < currentStep ? <Check className="w-5 h-5" /> : index + 1}
                 </span>
-              </li>
-            ))}
-          </ol>
-           <p className="text-center mt-2 text-sm font-medium">{steps[currentStep].name}</p>
-        </div>
-        <CardTitle className="text-2xl">Buchungsdaten vervollständigen</CardTitle>
-        <CardDescription className="text-base mt-2 space-y-1">
-          <p>Hallo {bookingDetails?.guestFirstName || 'Gast'}, Ihre Buchung für</p>
-          <p className="font-semibold">
-            ein {formatZimmertyp(bookingDetails?.zimmertyp)}
-            {bookingDetails?.verpflegung && bookingDetails.verpflegung !== "ohne" ? ` mit ${formatVerpflegung(bookingDetails.verpflegung)}` : ""}
-          </p>
-          <p>
-            für {numAdults} Erwachsene
-            {numChildren > 0 ? `, ${numChildren} Kind(er)` : ""}
-            {numInfants > 0 ? ` und ${numInfants} Kleinkind(er)` : ""}
-            {bookingDetails?.alterKinder && numChildren > 0 ? ` (Alter: ${bookingDetails.alterKinder})` : ""}
-          </p>
-          <p>
-            vom <span className="font-semibold">{bookingDetails?.checkInDate ? format(new Date(bookingDetails.checkInDate), "dd.MM.yyyy", { locale: de }) : 'N/A'}</span>
-            bis <span className="font-semibold">{bookingDetails?.checkOutDate ? format(new Date(bookingDetails.checkOutDate), "dd.MM.yyyy", { locale: de }) : 'N/A'}</span>
-          </p>
-          <p>
-            zum Preis von <span className="font-semibold">{bookingDetails?.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(bookingDetails.price) : 'N/A'}</span>
-          </p>
-          <p className="pt-2">ist fast abgeschlossen. Bitte füllen Sie die folgenden Schritte aus:</p>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form action={formAction}>
-          <ActiveStepContent bookingToken={bookingToken} bookingDetails={bookingDetails} formState={formState} />
-          {formState.message && !formState.success && Object.keys(formState.errors || {}).length === 0 && (
-            <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center">
-              <AlertCircle className="h-4 w-4 mr-2"/> {formState.message}
-            </div>
-          )}
-        </form>
-      </CardContent>
-      {currentStep > 0 && currentStep < steps.length && !(formState.success && currentStep === steps.length - 1) && (
-         <CardFooter className="border-t pt-6">
-            <Button variant="outline" onClick={() => setCurrentStep(prev => prev -1)} className="mr-auto">
-                Zurück
-            </Button>
-         </CardFooter>
-      )}
-    </Card>
+                <span className={cn(
+                    "text-xs",
+                     index <= currentStep ? "text-primary" : "text-muted-foreground"
+                )}>
+                    {label}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <Card className="w-full shadow-xl">
+        <CardHeader className="border-b">
+            <CardTitle className="text-xl">{steps[currentStep].name}</CardTitle>
+             {/* Optional: Could add a description for the current step here */}
+        </CardHeader>
+        <CardContent className="pt-6">
+          <form action={formAction}>
+            <ActiveStepContent bookingToken={bookingToken} bookingDetails={bookingDetails} formState={formState} />
+            {formState.message && !formState.success && Object.keys(formState.errors || {}).length === 0 && (
+              <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2"/> {formState.message}
+              </div>
+            )}
+          </form>
+        </CardContent>
+        {/* Footer with Back button (if not the first step) */}
+        {(currentStep > 0 && currentStep < steps.length && !(formState.success && currentStep === steps.length - 1)) && (
+           <CardFooter className="border-t pt-6">
+              <Button variant="outline" onClick={() => setCurrentStep(prev => prev -1)} className="mr-auto">
+                  Zurück
+              </Button>
+           </CardFooter>
+        )}
+      </Card>
+    </div>
   );
 }
