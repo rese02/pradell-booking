@@ -60,83 +60,89 @@ const INITIAL_MOCK_BOOKINGS: Booking[] = [
 // Internal state of the mock database
 let INTERNAL_MOCK_BOOKINGS_DB: Booking[] = JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS)); // Deep copy to start fresh on server restart for dev
 
-console.log(`[Module mock-db.ts] Initialized. INTERNAL_MOCK_BOOKINGS_DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
+console.log(`[Module mock-db.ts] Initialized at ${new Date().toISOString()}. INTERNAL_MOCK_BOOKINGS_DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
 
 export function getMockBookings(): Booking[] {
-  console.log(`[getMockBookings] Accessing DB. Current length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
-  // Return a deep copy to prevent unintended modifications outside of the defined functions
+  console.log(`[MockDB getMockBookings] Accessing DB. Current length: ${INTERNAL_MOCK_BOOKINGS_DB.length} at ${new Date().toISOString()}`);
   return JSON.parse(JSON.stringify(INTERNAL_MOCK_BOOKINGS_DB));
 }
 
 export function addMockBooking(booking: Booking): void {
-  console.log(`[addMockBooking] Attempting to add booking. Current length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
+  console.log(`[MockDB addMockBooking] Attempting to add booking. Current DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length} at ${new Date().toISOString()}`);
   INTERNAL_MOCK_BOOKINGS_DB.unshift(booking); // Add to the beginning
-  console.log(`[addMockBooking] Booking added. New length: ${INTERNAL_MOCK_BOOKINGS_DB.length}. Tokens: ${INTERNAL_MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', ')}`);
+  console.log(`[MockDB addMockBooking] Booking added with token ${booking.bookingToken}. New DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}. All tokens: ${INTERNAL_MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', ')}`);
 }
 
 export function findMockBookingByToken(token: string): Booking | undefined {
-  console.log(`[findMockBookingByToken] Searching for token: "${token}". DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}. Available tokens: ${INTERNAL_MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', ')}`);
+  console.log(`[MockDB findMockBookingByToken] Searching for token: "${token}" at ${new Date().toISOString()}`);
+  console.log(`[MockDB findMockBookingByToken] Current DB (length ${INTERNAL_MOCK_BOOKINGS_DB.length}) tokens: [${INTERNAL_MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', ')}]`);
   const booking = INTERNAL_MOCK_BOOKINGS_DB.find(b => b.bookingToken === token);
   if (booking) {
-    console.log(`[findMockBookingByToken] Found booking for token "${token}".`);
+    console.log(`[MockDB findMockBookingByToken] Found booking for token "${token}".`);
     return JSON.parse(JSON.stringify(booking)); // Return a copy
   }
-  console.warn(`[findMockBookingByToken] Booking with token "${token}" not found.`);
+  console.warn(`[MockDB findMockBookingByToken] Booking with token "${token}" NOT FOUND.`);
   return undefined;
 }
 
 export function findMockBookingById(id: string): Booking | undefined {
-  console.log(`[findMockBookingById] Searching for ID: "${id}". DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
+  console.log(`[MockDB findMockBookingById] Searching for ID: "${id}" at ${new Date().toISOString()}`);
+  console.log(`[MockDB findMockBookingById] Current DB (length ${INTERNAL_MOCK_BOOKINGS_DB.length}) IDs: [${INTERNAL_MOCK_BOOKINGS_DB.map(b => b.id).join(', ')}]`);
   const booking = INTERNAL_MOCK_BOOKINGS_DB.find(b => b.id === id);
    if (booking) {
-    console.log(`[findMockBookingById] Found booking for ID "${id}".`);
+    console.log(`[MockDB findMockBookingById] Found booking for ID "${id}".`);
     return JSON.parse(JSON.stringify(booking)); // Return a copy
   }
-  console.warn(`[findMockBookingById] Booking with ID "${id}" not found.`);
+  console.warn(`[MockDB findMockBookingById] Booking with ID "${id}" NOT FOUND.`);
   return undefined;
 }
 
 export function updateMockBookingByToken(token: string, updates: Partial<Booking> | { guestSubmittedData: Partial<GuestSubmittedData>, documentUrls?: string[] }): boolean {
-  console.log(`[updateMockBookingByToken] Attempting to update booking with token: "${token}". DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
+  console.log(`[MockDB updateMockBookingByToken] Attempting to update booking with token: "${token}". DB length: ${INTERNAL_MOCK_BOOKINGS_DB.length} at ${new Date().toISOString()}`);
   const bookingIndex = INTERNAL_MOCK_BOOKINGS_DB.findIndex(b => b.bookingToken === token);
   if (bookingIndex !== -1) {
     const currentBooking = INTERNAL_MOCK_BOOKINGS_DB[bookingIndex];
     
-    // Handle nested guestSubmittedData updates carefully
+    let updatedBookingData: Booking;
+
     if ('guestSubmittedData' in updates && typeof updates.guestSubmittedData === 'object') {
       const guestDataUpdates = updates.guestSubmittedData as Partial<GuestSubmittedData>;
       const newGuestSubmittedData = {
         ...(currentBooking.guestSubmittedData || {}),
         ...guestDataUpdates,
       };
-      // Special handling for documentUrls if provided in the nested structure
       if ('documentUrls' in updates && Array.isArray(updates.documentUrls)) {
+        // This case seems unlikely given the structure, but for safety:
         newGuestSubmittedData.documentUrls = updates.documentUrls;
+      } else if (guestDataUpdates.documentUrls) {
+         // If documentUrls are part of guestDataUpdates
+        newGuestSubmittedData.documentUrls = guestDataUpdates.documentUrls;
       }
 
-      INTERNAL_MOCK_BOOKINGS_DB[bookingIndex] = {
+
+      updatedBookingData = {
         ...currentBooking,
-        ...updates, // Apply top-level updates (like status)
-        guestSubmittedData: newGuestSubmittedData, // Apply merged guest data
+        ...(updates as Partial<Booking>), 
+        guestSubmittedData: newGuestSubmittedData,
         updatedAt: new Date().toISOString(),
       };
     } else {
-       // Handle top-level updates only
-      INTERNAL_MOCK_BOOKINGS_DB[bookingIndex] = {
+      updatedBookingData = {
         ...currentBooking,
-        ...(updates as Partial<Booking>), // Cast here as we've handled the other case
+        ...(updates as Partial<Booking>),
         updatedAt: new Date().toISOString(),
       };
     }
-    console.log(`[updateMockBookingByToken] Booking with token "${token}" updated successfully.`);
+    INTERNAL_MOCK_BOOKINGS_DB[bookingIndex] = updatedBookingData;
+    console.log(`[MockDB updateMockBookingByToken] Booking with token "${token}" updated successfully.`);
     return true;
   }
-  console.warn(`[updateMockBookingByToken] Booking with token "${token}" not found for update.`);
+  console.warn(`[MockDB updateMockBookingByToken] Booking with token "${token}" not found for update.`);
   return false;
 }
 
-// Helper to reset the mock DB to initial state (e.g., for testing or specific dev scenarios)
 export function resetMockDb(): void {
-  console.log("[resetMockDb] Resetting INTERNAL_MOCK_BOOKINGS_DB to initial state.");
+  console.log(`[MockDB resetMockDb] Resetting INTERNAL_MOCK_BOOKINGS_DB to initial state at ${new Date().toISOString()}.`);
   INTERNAL_MOCK_BOOKINGS_DB = JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS));
+  console.log(`[MockDB resetMockDb] DB reset. New length: ${INTERNAL_MOCK_BOOKINGS_DB.length}`);
 }

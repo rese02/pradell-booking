@@ -190,11 +190,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
       if (currentStep >= 0 && currentStep < steps.length) {
         const currentAction = steps[currentStep].action;
         if (currentAction) {
-          // Bind bookingToken to the action
           return currentAction(bookingToken, prevState, formData);
         }
       }
-      console.error("Fehler: Aktion für den aktuellen Schritt nicht gefunden oder ungültiger Schritt.", currentStep, steps);
+      console.error("[GuestBookingFormStepper] Fehler: Aktion für den aktuellen Schritt nicht gefunden oder ungültiger Schritt.", currentStep, steps);
       return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig.", errors: null, success: false });
     },
     initialFormState
@@ -213,16 +212,12 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
 
     if (formState.success && currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
-      // Reset formState for the next step.
-      // This can be tricky with useActionState as it doesn't auto-reset.
-      // A common pattern is to rely on the action itself to return a fresh initial state upon success if that's desired.
-      // For now, the state will persist, which means success messages might linger until a new action is dispatched.
     }
-  }, [formState, toast, currentStep, steps]); // Removed steps.length from deps as steps is memoized
+  }, [formState, toast, currentStep, steps]);
 
 
-  if (!steps || currentStep < 0 || currentStep > steps.length) { // Check currentStep against steps.length (allow currentStep to be steps.length for completion message)
-     console.error("GuestBookingFormStepper: Invalid steps array or currentStep index.", currentStep, steps);
+  if (!steps || currentStep < 0) { 
+     console.error("[GuestBookingFormStepper] Invalid steps array or currentStep index.", currentStep, steps);
      return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
   }
 
@@ -244,11 +239,19 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
     );
   }
   
-  // This should be checked after the completion message
   if (currentStep >= steps.length) {
-    // This case should ideally not be reached if the completion logic is correct
-    // but as a fallback:
-    return <p>Formular bereits abgeschlossen oder ungültiger Status.</p>;
+     console.warn("[GuestBookingFormStepper] currentStep is out of bounds (>= steps.length) but not yet caught by success condition. Current step:", currentStep, "Steps length:", steps.length);
+    return (
+         <Card className="w-full max-w-2xl mx-auto shadow-xl">
+            <CardHeader className="items-center text-center">
+              <Info className="w-16 h-16 text-blue-500 mb-4" />
+              <CardTitle className="text-2xl">Formularstatus</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center">
+              <CardDescription>Das Formular wurde bereits abgeschlossen oder befindet sich in einem unerwarteten Zustand.</CardDescription>
+            </CardContent>
+        </Card>
+    );
   }
 
   const ActiveStepContent = steps[currentStep].Content;

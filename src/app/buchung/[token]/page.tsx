@@ -9,26 +9,18 @@ import { notFound } from "next/navigation";
 // Log module evaluation time
 console.log(`[Module /buchung/[token]/page.tsx] Module evaluated at ${new Date().toISOString()}`);
 
-// Mock data fetching function - replace with actual data fetching from your backend/Firebase
 async function getBookingByToken(token: string): Promise<Booking | null> {
   console.log(`[Server getBookingByToken] Attempting to fetch booking for token: "${token}" at ${new Date().toISOString()}`);
   
   // Log the current state of MOCK_BOOKINGS_DB that this function sees
-  const currentBookingsInDb = getMockBookings(); // Use the new getter
-  const availableTokens = currentBookingsInDb.map(b => b.bookingToken);
-  console.log(`[Server getBookingByToken] Current MOCK_BOOKINGS_DB length: ${currentBookingsInDb.length}`);
-  console.log(`[Server getBookingByToken] Available tokens in MOCK_BOOKINGS_DB: [${availableTokens.join(', ')}]`);
-  
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 100));
-
-  const booking = findMockBookingByToken(token); // Use the new finder
+  // This call to getMockBookings() itself logs the internal state of the DB via findMockBookingByToken
+  const booking = findMockBookingByToken(token); 
 
   if (booking) {
-    console.log(`[Server getBookingByToken] Found booking for token "${token}". Status: ${booking.status}`);
+    console.log(`[Server getBookingByToken] Successfully found booking for token "${token}". Status: ${booking.status}`);
     return booking;
   } else {
-    console.warn(`[Server getBookingByToken] No booking found for token "${token}".`);
+    console.warn(`[Server getBookingByToken] No booking found for token "${token}" by findMockBookingByToken.`);
     return null;
   }
 }
@@ -39,13 +31,18 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   const booking = await getBookingByToken(params.token);
 
   if (!booking) {
-    console.error(`[Server GuestBookingPage] Booking not found for token "${params.token}", calling notFound().`);
+    console.error(`[Server GuestBookingPage] Booking not found for token "${params.token}" (getBookingByToken returned null). Calling notFound().`);
+    // Before calling notFound, let's log the available tokens one last time from this context
+    const currentBookingsInDb = getMockBookings();
+    console.error(`[Server GuestBookingPage] For token "${params.token}", current tokens in DB from getMockBookings(): [${currentBookingsInDb.map(b => b.bookingToken).join(', ')}]`);
     notFound();
   }
   
+  console.log(`[Server GuestBookingPage] Booking data retrieved for token "${params.token}":`, JSON.stringify(booking, null, 2));
+
   // Check if guest data was already submitted and booking is confirmed
   if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
-     console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Confirmed and data submitted.`);
+     console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Confirmed and data submitted. Displaying confirmation.`);
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
@@ -63,7 +60,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (booking.status === "Cancelled") {
-    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Cancelled.`);
+    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Cancelled. Displaying cancellation message.`);
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
@@ -81,7 +78,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
 
   // If booking is pending guest information (and not yet fully submitted and confirmed)
   if (booking.status === "Pending Guest Information") {
-    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Pending Guest Information. Rendering form.`);
+    console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is "Pending Guest Information". Rendering GuestBookingFormStepper.`);
     return (
       <GuestBookingFormStepper bookingToken={params.token} bookingDetails={booking} />
     );
