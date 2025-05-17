@@ -9,13 +9,13 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn } from "lucide-react";
 import { Logo } from "@/components/shared/Logo";
-import { useRouter } from "next/navigation"; // Corrected import for App Router
+import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Ungültige E-Mail-Adresse." }),
-  password: z.string().min(6, { message: "Passwort muss mindestens 6 Zeichen lang sein." }),
+  password: z.string().min(1, { message: "Passwort ist erforderlich." }), // Allow any non-empty password for Pradell!
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -32,15 +32,11 @@ export default function AdminLoginPage() {
     },
   });
 
-  // Placeholder login function
   async function onSubmit(values: LoginFormValues) {
-    // In a real app, you'd call an authentication API here
     console.log("Login attempt:", values);
-    // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Simulate successful login
-    if (values.email === "admin@example.com" && values.password === "password") {
+    if (values.email === "info@pradell.com" && values.password === "Pradell!") {
       toast({
         title: "Login erfolgreich",
         description: "Willkommen zurück!",
@@ -74,7 +70,7 @@ export default function AdminLoginPage() {
                   <FormItem>
                     <FormLabel>E-Mail</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="admin@example.com" {...field} />
+                      <Input type="email" placeholder="info@pradell.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

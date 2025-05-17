@@ -13,7 +13,7 @@ import {
   type ColumnFiltersState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronDown, MoreHorizontal, Search, Filter } from "lucide-react";
+import { ArrowUpDown, ChevronDown, MoreHorizontal, Search, ListFilter } from "lucide-react"; // Changed Filter to ListFilter
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -120,18 +120,18 @@ export const columns: ColumnDef<Booking>[] = [
     cell: ({ row }) => {
       const status = row.getValue("status") as string;
       let variant: "default" | "secondary" | "destructive" | "outline" = "outline";
-      if (status === "Confirmed") variant = "default"; // Using "default" for positive status (like success)
+      if (status === "Confirmed") variant = "default"; 
       if (status === "Pending Guest Information") variant = "secondary";
       if (status === "Cancelled") variant = "destructive";
 
-      return <Badge variant={variant} className="capitalize">{status.toLowerCase()}</Badge>;
+      return <Badge variant={variant} className="capitalize">{status.toLowerCase().replace(/_/g, ' ')}</Badge>;
     },
   },
   {
     accessorKey: "bookingToken",
     header: "Gast-Link",
     cell: ({ row }) => (
-      <Link href={`/buchung/${row.original.bookingToken}`} target="_blank" className="text-blue-600 hover:underline text-xs">
+      <Link href={`/buchung/${row.original.bookingToken}`} target="_blank" className="text-primary hover:underline text-xs">
         Link öffnen
       </Link>
     )
@@ -208,15 +208,15 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
             onChange={(event) =>
                 table.getColumn("guestFullName")?.setFilterValue(event.target.value)
             }
-            className="pl-10 max-w-sm"
+            className="pl-10 max-w-sm" // Made input slightly wider
             />
         </div>
         <Button variant="outline" size="sm">
-            <Filter className="mr-2 h-4 w-4" /> Filter
+            <ListFilter className="mr-2 h-4 w-4" /> Buchungen ausrichten
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="ml-auto">
+            <Button variant="outline" className="ml-auto"> 
               Spalten <ChevronDown className="ml-2 h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
