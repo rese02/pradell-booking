@@ -4,10 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2 } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { findMockBookingById } from "@/lib/mock-db";
 import { notFound } from "next/navigation";
@@ -15,8 +15,6 @@ import { notFound } from "next/navigation";
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
   console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details for id: "${id}"`);
-  // Simuliere eine kleine Verzögerung, um echte API-Aufrufe nachzuahmen
-  // await new Promise(resolve => setTimeout(resolve, 100)); 
   const booking = findMockBookingById(id);
   if (!booking) {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
@@ -29,11 +27,17 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
 const formatDate = (dateString?: Date | string, includeTime = false) => {
   if (!dateString) return "N/A";
   try {
+    const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
     const formatString = includeTime ? "dd. MMM yyyy, HH:mm 'Uhr'" : "dd. MMM yyyy";
-    return format(new Date(dateString), formatString, { locale: de });
+    return format(date, formatString, { locale: de });
   } catch (error) {
     return "Ungültiges Datum";
   }
+};
+
+const formatCurrency = (amount?: number) => {
+    if (typeof amount !== 'number') return "N/A";
+    return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(amount);
 };
 
 interface DetailItemProps {
@@ -96,7 +100,6 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
   console.log(`[Server BookingDetailsPage] Booking data for id "${params.id}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
 
   const guestData = booking.guestSubmittedData;
-  // Avoid using window on server. Generate link relative to current host if needed, or absolute if host is known.
   const guestPortalLink = `/buchung/${booking.bookingToken}`;
 
 
@@ -122,7 +125,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
               <CardTitle>Hauptinformationen</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
-              <DetailItem icon={User} label="Gast" value={`${booking.guestFirstName} ${booking.guestLastName}`} />
+              <DetailItem icon={User} label="Gast (Initial)" value={`${booking.guestFirstName} ${booking.guestLastName}`} />
               <DetailItem icon={Euro} label="Preis" value={booking.price} isCurrency />
               <DetailItem icon={Home} label="Zimmer" value={booking.roomIdentifier} />
               <DetailItem icon={CalendarDays} label="Anreise" value={formatDate(booking.checkInDate)} />
@@ -134,9 +137,9 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                   booking.status === "Cancelled" ? "destructive" : "outline"
                 }
               />
-              <DetailItem icon={User} label="Erwachsene" value={booking.erwachsene?.toString()} />
-              {typeof booking.kinder === 'number' && <DetailItem icon={User} label="Kinder (3+)" value={booking.kinder.toString()} />}
-              {typeof booking.kleinkinder === 'number' && <DetailItem icon={User} label="Kleinkinder (0-2 J.)" value={booking.kleinkinder.toString()} />}
+              <DetailItem icon={Users} label="Erwachsene" value={booking.erwachsene?.toString()} />
+              {typeof booking.kinder === 'number' && <DetailItem icon={Users} label="Kinder (3+)" value={booking.kinder.toString()} />}
+              {typeof booking.kleinkinder === 'number' && <DetailItem icon={Users} label="Kleinkinder (0-2 J.)" value={booking.kleinkinder.toString()} />}
               {booking.alterKinder && <DetailItem icon={User} label="Alter Kinder" value={booking.alterKinder} />}
               <DetailItem icon={Home} label="Verpflegung" value={booking.verpflegung} />
               <DetailItem icon={Link2} label="Gast-Link" value={guestPortalLink} isLink />
@@ -160,24 +163,87 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
           )}
 
 
-          {guestData && (
+          {guestData && (guestData.gastVorname || guestData.email) && ( // Überprüfen, ob relevante Gastdaten vorhanden sind
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>
-                {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)}</CardDescription>}
+                {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)} (Letzter Schritt: {guestData.lastCompletedStep})</CardDescription>}
               </CardHeader>
               <CardContent className="space-y-4">
-                <h3 className="font-semibold text-lg">Persönliche Angaben</h3>
+                <h3 className="font-semibold text-lg">Stammdaten</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                    <DetailItem icon={User} label="Vollständiger Name" value={guestData.fullName} />
+                    <DetailItem icon={User} label="Anrede" value={guestData.anrede} />
+                    <DetailItem icon={User} label="Vollständiger Name" value={`${guestData.gastVorname || ''} ${guestData.gastNachname || ''}`} />
+                    <DetailItem icon={CalendarDays} label="Geburtsdatum" value={formatDate(guestData.geburtsdatum)} />
                     <DetailItem icon={Mail} label="E-Mail" value={guestData.email} isLink />
-                    <DetailItem icon={Phone} label="Telefon" value={guestData.phone} />
-                    <DetailItem icon={Home} label="Adresse">
-                      {guestData.addressLine1}{guestData.addressLine2 ? `, ${guestData.addressLine2}` : ''}<br/>
-                      {guestData.postalCode} {guestData.city}<br/>
-                      {guestData.country}
-                    </DetailItem>
+                    <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
                 </div>
+                
+                {(guestData.hauptgastDokumenttyp || guestData.hauptgastAusweisVorderseiteUrl) && (
+                  <>
+                    <Separator />
+                    <h3 className="font-semibold text-lg">Ausweisdokument Hauptgast</h3>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <DetailItem icon={Briefcase} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
+                      {guestData.hauptgastAusweisVorderseiteUrl && (
+                        <div className="rounded-md overflow-hidden border aspect-video relative">
+                          <Image 
+                            src={guestData.hauptgastAusweisVorderseiteUrl} 
+                            alt="Ausweis Vorderseite" 
+                            fill={true}
+                            style={{objectFit: "cover"}}
+                            data-ai-hint="identification document"
+                          />
+                           <Button asChild size="sm" className="absolute bottom-2 right-2 opacity-80 hover:opacity-100">
+                                <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="mr-1 h-3 w-3"/>Ansehen
+                                </Link>
+                            </Button>
+                        </div>
+                      )}
+                      {guestData.hauptgastAusweisRückseiteUrl && (
+                        <div className="rounded-md overflow-hidden border aspect-video relative">
+                          <Image 
+                            src={guestData.hauptgastAusweisRückseiteUrl} 
+                            alt="Ausweis Rückseite" 
+                            fill={true}
+                            style={{objectFit: "cover"}}
+                            data-ai-hint="identification document"
+                          />
+                           <Button asChild size="sm" className="absolute bottom-2 right-2 opacity-80 hover:opacity-100">
+                                <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" rel="noopener noreferrer">
+                                    <FileText className="mr-1 h-3 w-3"/>Ansehen
+                                </Link>
+                            </Button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {(guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
+                    <>
+                        <Separator />
+                        <h3 className="font-semibold text-lg">Zahlungsinformationen</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
+                            <DetailItem icon={Euro} label="Gezahlter Betrag (Anzahlung)" value={guestData.zahlungsbetrag} isCurrency/>
+                            <DetailItem icon={CalendarDays} label="Zahlungsdatum" value={formatDate(guestData.zahlungsdatum)} />
+                        </div>
+                        {guestData.zahlungsbelegUrl && (
+                             <div className="mt-2">
+                                <p className="text-sm font-medium mb-1">Zahlungsbeleg:</p>
+                                <Button asChild variant="outline" size="sm">
+                                    <Link href={guestData.zahlungsbelegUrl} target="_blank" rel="noopener noreferrer">
+                                        <FileText className="mr-2 h-4 w-4"/>Beleg ansehen
+                                    </Link>
+                                </Button>
+                            </div>
+                        )}
+                    </>
+                )}
                 
                 {guestData.specialRequests && (
                   <>
@@ -186,43 +252,28 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     <DetailItem icon={MessageSquare} label="Nachricht" value={guestData.specialRequests} />
                   </>
                 )}
-                
-                {guestData.documentUrls && guestData.documentUrls.length > 0 && (
-                  <>
-                    <Separator />
-                    <h3 className="font-semibold text-lg">Hochgeladene Dokumente</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                      {guestData.documentUrls.map((url, index) => (
-                        <div key={index} className="rounded-md overflow-hidden border aspect-video relative">
-                          <Image 
-                            src={url} 
-                            alt={`Dokument ${index + 1}`} 
-                            fill={true}
-                            style={{objectFit: "cover"}}
-                            data-ai-hint="identification document"
-                          />
-                           <Button asChild size="sm" className="absolute bottom-2 right-2 opacity-80 hover:opacity-100">
-                                <Link href={url} target="_blank" rel="noopener noreferrer">
-                                    <FileText className="mr-1 h-3 w-3"/>Ansehen
-                                </Link>
-                            </Button>
+
+                {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
+                    <>
+                        <Separator />
+                        <h3 className="font-semibold text-lg">Zustimmungen</h3>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                           {guestData.agbAkzeptiert !== undefined && <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert ? "Ja" : "Nein"} />}
+                           {guestData.datenschutzAkzeptiert !== undefined && <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert ? "Ja" : "Nein"} />}
                         </div>
-                      ))}
-                    </div>
-                  </>
+                    </>
                 )}
               </CardContent>
             </Card>
           )}
         </div>
 
-        <Card className="lg:col-span-1 h-fit sticky top-20"> {/* Activity/Notes section */}
+        <Card className="lg:col-span-1 h-fit sticky top-20">
             <CardHeader>
                 <CardTitle>Notizen & Verlauf</CardTitle>
                 <CardDescription>Interne Notizen und Buchungsverlauf.</CardDescription>
             </CardHeader>
             <CardContent>
-                {/* Placeholder for notes and activity feed */}
                 <p className="text-sm text-muted-foreground">Feature in Kürze verfügbar.</p>
             </CardContent>
         </Card>
@@ -230,4 +281,3 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     </div>
   );
 }
-

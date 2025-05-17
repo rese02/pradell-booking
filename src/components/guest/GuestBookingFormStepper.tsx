@@ -1,51 +1,56 @@
 
 "use client";
 
-import { useState, useEffect, type ReactNode, useActionState, useMemo } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useEffect, type ReactNode, useActionState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "@/components/ui/textarea"; // Für Special Requests, falls in Schritt 4 benötigt
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Check, CheckCircle, CheckCircle2, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent } from "lucide-react";
-import { submitHauptgastAction, submitMitreisendeAction, submitPaymentAmountSelectionAction } from "@/lib/actions";
-import type { Booking, GuestSubmittedData, Mitreisender } from "@/lib/definitions";
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent } from "lucide-react";
+import { 
+  submitGastStammdatenAction,
+  submitAusweisdokumenteAction,
+  submitZahlungsinformationenAction,
+  submitEndgueltigeBestaetigungAction
+} from "@/lib/actions";
+import type { Booking, GuestSubmittedData } from "@/lib/definitions";
 import { cn } from "@/lib/utils";
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { PradellLogo } from "@/components/shared/PradellLogo";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Step {
   id: string;
   name: string;
-  Icon: React.ElementType;
-  StepIcon: React.ElementType;
+  Icon: React.ElementType; // Icon für den Schritt-Titel in der Karte
+  StepIcon: React.ElementType; // Icon für die Stepper-Navigation oben
   Content: React.FC<StepContentProps>;
-  action?: (bookingToken: string, prevState: any, formData: FormData) => Promise<any>;
+  action: (bookingToken: string, prevState: any, formData: FormData) => Promise<FormState>;
 }
 
 interface StepContentProps {
   bookingToken: string;
   bookingDetails?: Booking | null;
+  guestData?: GuestSubmittedData | null; // Aktueller Stand der vom Gast übermittelten Daten
   formState: FormState;
-  onNext?: () => void;
-  hauptgastSpecialRequests?: string;
-  setHauptgastSpecialRequests?: (requests: string) => void;
+  currentActionToken?: string; // Um den aktuellen actionToken an die Form zu binden
 }
 
 type FormState = {
   message?: string | null;
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
+  actionToken?: string; // Eindeutiger Token für jede erfolgreiche Aktion
 };
 
-const initialFormState: FormState = { message: null, errors: null, success: false };
+const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined };
 
 const getErrorMessage = (fieldName: string, errors: FormState['errors']): string | undefined => {
   return errors?.[fieldName]?.[0];
@@ -54,526 +59,341 @@ const getErrorMessage = (fieldName: string, errors: FormState['errors']): string
 const formatDateDisplay = (dateString?: Date | string) => {
     if (!dateString) return "N/A";
     try {
-      return format(new Date(dateString), "dd.MM.yyyy", { locale: de });
+      const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
+      return format(date, "dd.MM.yyyy", { locale: de });
     } catch {
       return String(dateString); 
     }
-  };
+};
+const formatDateForInput = (dateString?: Date | string) => {
+    if (!dateString) return "";
+    try {
+        const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
+        return format(date, "yyyy-MM-dd");
+    } catch {
+        return "";
+    }
+};
 
 const formatCurrency = (amount?: number) => {
     if (typeof amount !== 'number') return "N/A";
     return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(amount);
 };
 
-// Step 1: Hauptgast
-const HauptgastStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetails, formState, setHauptgastSpecialRequests }) => {
-  const { pending } = useFormStatus();
-  const [fileNameVorderseite, setFileNameVorderseite] = useState<string | null>(null);
-  const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
-  const [specialRequestsLocal, setSpecialRequestsLocal] = useState(bookingDetails?.guestSubmittedData?.specialRequests || "");
 
-  useEffect(() => {
-    if (setHauptgastSpecialRequests) {
-        setHauptgastSpecialRequests(specialRequestsLocal);
-    }
-  }, [specialRequestsLocal, setHauptgastSpecialRequests]);
-
-
+// --- Schritt 1: Gast-Stammdaten ---
+const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState, currentActionToken }) => {
   return (
     <div className="space-y-6">
+      <input type="hidden" name="currentActionToken" value={currentActionToken} />
       <div>
-        <h2 className="text-xl font-semibold">Ihre Daten (Hauptbucher)</h2>
+        <h2 className="text-xl font-semibold">Ihre Kontaktdaten</h2>
         <p className="text-sm text-muted-foreground">Bitte füllen Sie die folgenden Felder aus.</p>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <Label htmlFor="anrede">Anrede *</Label>
+          <Select name="anrede" defaultValue={guestData?.anrede}>
+            <SelectTrigger id="anrede">
+              <SelectValue placeholder="Anrede wählen" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Herr">Herr</SelectItem>
+              <SelectItem value="Frau">Frau</SelectItem>
+              <SelectItem value="Divers">Divers</SelectItem>
+            </SelectContent>
+          </Select>
+          {getErrorMessage("anrede", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("anrede", formState.errors)}</p>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div>
-          <Label htmlFor="fullName" className="flex items-center mb-1"><UserCircle className="w-4 h-4 mr-2 text-muted-foreground" />Vorname</Label>
-          <Input id="fullName" name="fullName" defaultValue={bookingDetails?.guestFirstName || ""} placeholder="Ihr Vorname" />
-          {getErrorMessage("fullName", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("fullName", formState.errors)}</p>}
+          <Label htmlFor="gastVorname">Vorname *</Label>
+          <Input id="gastVorname" name="gastVorname" defaultValue={guestData?.gastVorname || ""} placeholder="Max" />
+          {getErrorMessage("gastVorname", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("gastVorname", formState.errors)}</p>}
         </div>
         <div>
-          <Label htmlFor="lastName" className="flex items-center mb-1"><UserCircle className="w-4 h-4 mr-2 text-muted-foreground" />Nachname</Label>
-          <Input id="lastName" name="lastName" defaultValue={bookingDetails?.guestLastName || ""} placeholder="Ihr Nachname" />
-          {getErrorMessage("lastName", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("lastName", formState.errors)}</p>}
+          <Label htmlFor="gastNachname">Nachname *</Label>
+          <Input id="gastNachname" name="gastNachname" defaultValue={guestData?.gastNachname || ""} placeholder="Mustermann" />
+          {getErrorMessage("gastNachname", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("gastNachname", formState.errors)}</p>}
         </div>
-         <div>
-          <Label htmlFor="email" className="flex items-center mb-1"><Mail className="w-4 h-4 mr-2 text-muted-foreground" />E-Mail</Label>
-          <Input id="email" name="email" type="email" defaultValue={bookingDetails?.guestSubmittedData?.email || ""} placeholder="max.mustermann@email.com" />
+      </div>
+
+      <div>
+        <Label htmlFor="geburtsdatum">Geburtsdatum (optional)</Label>
+        <Input id="geburtsdatum" name="geburtsdatum" type="date" defaultValue={formatDateForInput(guestData?.geburtsdatum)} />
+        {getErrorMessage("geburtsdatum", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("geburtsdatum", formState.errors)}</p>}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <Label htmlFor="email">E-Mail-Adresse *</Label>
+          <Input id="email" name="email" type="email" defaultValue={guestData?.email || ""} placeholder="max.mustermann@email.com" />
           {getErrorMessage("email", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("email", formState.errors)}</p>}
         </div>
         <div>
-          <Label htmlFor="phone" className="flex items-center mb-1"><Phone className="w-4 h-4 mr-2 text-muted-foreground" />Telefon</Label>
-          <Input id="phone" name="phone" defaultValue={bookingDetails?.guestSubmittedData?.phone || ""} placeholder="+49 123 456789" />
-          {getErrorMessage("phone", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("phone", formState.errors)}</p>}
+          <Label htmlFor="telefon">Telefonnummer *</Label>
+          <Input id="telefon" name="telefon" defaultValue={guestData?.telefon || ""} placeholder="+49 123 456789" />
+          {getErrorMessage("telefon", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("telefon", formState.errors)}</p>}
         </div>
       </div>
+      <p className="text-xs text-muted-foreground">Wir verwenden Ihre E-Mail und Telefonnummer zur Kontaktaufnahme bei Rückfragen zu Ihrer Buchung.</p>
+    </div>
+  );
+};
+
+// --- Schritt 2: Ausweisdokument(e) ---
+const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState, currentActionToken }) => {
+  const [fileNameVorderseite, setFileNameVorderseite] = useState<string | null>(null);
+  const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
+
+  useEffect(() => {
+    if(guestData?.hauptgastAusweisVorderseiteUrl) setFileNameVorderseite("Vorhandene Datei");
+    if(guestData?.hauptgastAusweisRückseiteUrl) setFileNameRückseite("Vorhandene Datei");
+  }, [guestData]);
+
+  return (
+    <div className="space-y-6">
+      <input type="hidden" name="currentActionToken" value={currentActionToken} />
       <div>
-        <Label htmlFor="alter" className="flex items-center mb-1"><CalendarDays className="w-4 h-4 mr-2 text-muted-foreground" />Alter (optional)</Label>
-        <Input id="alter" name="alter" type="number" placeholder="30" defaultValue={bookingDetails?.guestSubmittedData?.alter?.toString() || ""} />
-        {getErrorMessage("alter", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("alter", formState.errors)}</p>}
+        <h2 className="text-xl font-semibold">Ihre Ausweisdokumente</h2>
+        <p className="text-sm text-muted-foreground">Bitte laden Sie eine Kopie Ihres Ausweisdokuments hoch (Vorder- und Rückseite, falls zutreffend).</p>
+      </div>
+      
+      <div>
+        <Label htmlFor="hauptgastDokumenttyp">Dokumenttyp *</Label>
+        <Select name="hauptgastDokumenttyp" defaultValue={guestData?.hauptgastDokumenttyp}>
+          <SelectTrigger id="hauptgastDokumenttyp">
+            <SelectValue placeholder="Dokumenttyp wählen" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Personalausweis">Personalausweis</SelectItem>
+            <SelectItem value="Reisepass">Reisepass</SelectItem>
+            <SelectItem value="Führerschein">Führerschein</SelectItem>
+          </SelectContent>
+        </Select>
+        {getErrorMessage("hauptgastDokumenttyp", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastDokumenttyp", formState.errors)}</p>}
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold">Ausweisdokumente (optional)</h3>
         <div>
-          <Label htmlFor="ausweisVorderseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Vorderseite)</Label>
+          <Label htmlFor="hauptgastAusweisVorderseite" className="block mb-1 text-sm font-medium">Vorderseite (optional)</Label>
           <div className="flex items-center gap-2">
             <Input
-              id="ausweisVorderseite"
-              name="ausweisVorderseite"
+              id="hauptgastAusweisVorderseite"
+              name="hauptgastAusweisVorderseite"
               type="file"
               className="hidden"
               onChange={(e) => setFileNameVorderseite(e.target.files?.[0]?.name || null)}
               accept=".jpg,.jpeg,.png,.pdf"
             />
             <Button asChild variant="outline" size="sm">
-              <Label htmlFor="ausweisVorderseite" className="cursor-pointer">
-                <FileUp className="w-4 h-4 mr-2"/> Wählen
+              <Label htmlFor="hauptgastAusweisVorderseite" className="cursor-pointer">
+                <FileUp className="w-4 h-4 mr-2"/> Datei wählen
               </Label>
             </Button>
             <span className="text-sm text-muted-foreground">{fileNameVorderseite || "Keine Datei ausgewählt"}</span>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Foto oder PDF (.jpg, .png, .pdf, max 5MB)</p>
-          {getErrorMessage("ausweisVorderseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("ausweisVorderseite", formState.errors)}</p>}
+          <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
+          {getErrorMessage("hauptgastAusweisVorderseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisVorderseite", formState.errors)}</p>}
         </div>
         <div>
-          <Label htmlFor="ausweisRückseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Rückseite)</Label>
+          <Label htmlFor="hauptgastAusweisRückseite" className="block mb-1 text-sm font-medium">Rückseite (optional)</Label>
            <div className="flex items-center gap-2">
             <Input
-              id="ausweisRückseite"
-              name="ausweisRückseite"
+              id="hauptgastAusweisRückseite"
+              name="hauptgastAusweisRückseite"
               type="file"
               className="hidden"
               onChange={(e) => setFileNameRückseite(e.target.files?.[0]?.name || null)}
               accept=".jpg,.jpeg,.png,.pdf"
             />
              <Button asChild variant="outline" size="sm">
-              <Label htmlFor="ausweisRückseite" className="cursor-pointer">
-                <FileUp className="w-4 h-4 mr-2"/> Wählen
+              <Label htmlFor="hauptgastAusweisRückseite" className="cursor-pointer">
+                <FileUp className="w-4 h-4 mr-2"/> Datei wählen
               </Label>
             </Button>
             <span className="text-sm text-muted-foreground">{fileNameRückseite || "Keine Datei ausgewählt"}</span>
           </div>
-          <p className="text-xs text-muted-foreground mt-1">Foto oder PDF (.jpg, .png, .pdf, max 5MB)</p>
-          {getErrorMessage("ausweisRückseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("ausweisRückseite", formState.errors)}</p>}
+          <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
+          {getErrorMessage("hauptgastAusweisRückseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisRückseite", formState.errors)}</p>}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Schritt 3: Zahlungsinformationen ---
+const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState, currentActionToken }) => {
+  const [fileNameBeleg, setFileNameBeleg] = useState<string | null>(null);
+  const anzahlungsbetrag = useMemo(() => (bookingDetails?.price || 0) * 0.3, [bookingDetails?.price]);
+
+  useEffect(() => {
+    if(guestData?.zahlungsbelegUrl) setFileNameBeleg("Vorhandene Datei");
+  }, [guestData]);
+
+  return (
+    <div className="space-y-6">
+      <input type="hidden" name="currentActionToken" value={currentActionToken} />
+      <div>
+        <h2 className="text-xl font-semibold">Zahlungsinformationen</h2>
+        <p className="text-sm text-muted-foreground">Bitte geben Sie die Details Ihrer Zahlung an.</p>
       </div>
 
       <div>
-        <Label htmlFor="specialRequests" className="flex items-center mb-1"><Info className="w-4 h-4 mr-2 text-muted-foreground" />Ihre Anmerkungen (optional)</Label>
-        <Textarea
-            id="specialRequests"
-            name="specialRequests"
-            placeholder="Haben Sie spezielle Wünsche?"
-            rows={3}
-            value={specialRequestsLocal}
-            onChange={(e) => setSpecialRequestsLocal(e.target.value)}
-        />
-        {getErrorMessage("specialRequests", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("specialRequests", formState.errors)}</p>}
+        <Label>Anzahlungsbetrag (30%)</Label>
+        <Input value={formatCurrency(anzahlungsbetrag)} readOnly className="mt-1 bg-muted/50" />
+        <p className="text-xs text-muted-foreground mt-1">Der Restbetrag ist vor Ort im Hotel zu begleichen.</p>
+      </div>
+      
+      <div>
+        <Label htmlFor="zahlungsart">Zahlungsart *</Label>
+        <Select name="zahlungsart" defaultValue={guestData?.zahlungsart || "Überweisung"}>
+          <SelectTrigger id="zahlungsart">
+            <SelectValue placeholder="Zahlungsart wählen" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="Überweisung">Überweisung</SelectItem>
+            {/* Weitere Zahlungsarten können hier hinzugefügt werden */}
+          </SelectContent>
+        </Select>
+        {getErrorMessage("zahlungsart", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsart", formState.errors)}</p>}
       </div>
 
-      <div className="flex items-start space-x-3 p-4 border rounded-md bg-muted/30">
-        <Checkbox id="datenschutz" name="datenschutz" defaultChecked={bookingDetails?.guestSubmittedData?.datenschutzAkzeptiert} />
-        <div className="grid gap-1.5 leading-none">
-          <Label htmlFor="datenschutz" className="flex items-center">
-            <ShieldCheck className="w-4 h-4 mr-2 text-muted-foreground" />Datenschutz *
-          </Label>
-          <p className="text-sm text-muted-foreground">
-            Ich bestätige hiermit, die <Link href="/datenschutz" target="_blank" className="underline text-primary">Datenschutzbestimmungen</Link> gelesen zu haben und stimme der Verarbeitung meiner Daten zu.
-          </p>
-          {getErrorMessage("datenschutz", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("datenschutz", formState.errors)}</p>}
-        </div>
+      <div>
+        <Label htmlFor="zahlungsdatum">Datum der Zahlung *</Label>
+        <Input id="zahlungsdatum" name="zahlungsdatum" type="date" defaultValue={formatDateForInput(guestData?.zahlungsdatum)} />
+        {getErrorMessage("zahlungsdatum", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsdatum", formState.errors)}</p>}
       </div>
-    </div>
-  );
-};
-
-
-const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetails, formState, hauptgastSpecialRequests }) => {
-  const { pending } = useFormStatus();
-  const [mitreisende, setMitreisende] = useState<Partial<Mitreisender>[]>(bookingDetails?.guestSubmittedData?.mitreisende || []);
-  const [fileNames, setFileNames] = useState<Record<string, { vorderseite?: string; rueckseite?: string }>>({});
-
-
-  const handleAddMitreisender = () => {
-    setMitreisende([...mitreisende, { id: `temp-${Date.now()}` }]);
-  };
-
-  const handleRemoveMitreisender = (index: number) => {
-    setMitreisende(mitreisende.filter((_, i) => i !== index));
-    setFileNames(prev => {
-        const newFileNames = {...prev};
-        delete newFileNames[mitreisende[index].id || index.toString()];
-        return newFileNames;
-    });
-  };
-
-  const handleMitreisenderChange = (index: number, field: keyof Mitreisender, value: string) => {
-    const updatedMitreisende = [...mitreisende];
-    updatedMitreisende[index] = { ...updatedMitreisende[index], [field]: value };
-    setMitreisende(updatedMitreisende);
-  };
-
-  const handleFileChange = (index: number, type: 'vorderseite' | 'rueckseite', file: File | null) => {
-    const mitreisenderId = mitreisende[index].id || index.toString();
-    setFileNames(prev => ({
-        ...prev,
-        [mitreisenderId]: {
-            ...prev[mitreisenderId],
-            [type]: file?.name
-        }
-    }));
-  };
-
-  const getPersonenText = () => {
-    const erwachsene = bookingDetails?.erwachsene || 0;
-    const kinder = bookingDetails?.kinder || 0;
-    const kleinkinder = bookingDetails?.kleinkinder || 0;
-    
-    const parts: string[] = [];
-    if (erwachsene > 0) parts.push(`${erwachsene} Erw.`);
-    if (kinder > 0) parts.push(`${kinder} Ki.`);
-    if (kleinkinder > 0) parts.push(`${kleinkinder} Klk.`);
-    
-    return parts.length > 0 ? parts.join(', ') : 'N/A';
-  };
-
-  return (
-    <div className="space-y-8">
-      <Card className="bg-muted/20 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold text-primary">Ihre Buchungsdetails</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                    <p className="text-xs text-muted-foreground">Check-in</p>
-                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Check-out</p>
-                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Preis</p>
-                    <p className="font-semibold">{formatCurrency(bookingDetails?.price)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Verpflegung</p>
-                    <p className="font-semibold capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
-                </div>
-            </div>
-            <Separator/>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                    <p className="text-xs text-muted-foreground">Hauptzimmer</p>
-                    <p className="font-semibold">{bookingDetails?.zimmertyp || 'N/A'}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Personen</p>
-                    <p className="font-semibold">{getPersonenText()}</p>
-                </div>
-            </div>
-            {(hauptgastSpecialRequests || bookingDetails?.interneBemerkungen) && <Separator/>}
-            {hauptgastSpecialRequests && (
-                <div>
-                    <p className="text-xs text-muted-foreground">Ihre Anmerkungen</p>
-                    <p className="font-medium whitespace-pre-wrap">{hauptgastSpecialRequests}</p>
-                </div>
-            )}
-             {bookingDetails?.interneBemerkungen && (
-                <div>
-                    <p className="text-xs text-muted-foreground">Anmerkungen (Hotel)</p>
-                    <p className="font-medium whitespace-pre-wrap">{bookingDetails.interneBemerkungen}</p>
-                </div>
-            )}
-        </CardContent>
-      </Card>
-
-      <Card className="shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold flex items-center">Weitere Mitreisende</CardTitle>
-          <CardDescription>Fügen Sie hier die Daten aller weiteren Personen hinzu (optional).</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {mitreisende.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">Keine weiteren Mitreisenden angegeben.</p>
-          )}
-          {mitreisende.map((gast, index) => (
-            <div key={gast.id || index} className="p-4 border rounded-md space-y-4 relative bg-muted/20">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive"
-                onClick={() => handleRemoveMitreisender(index)}
-                aria-label="Mitreisenden entfernen"
-                type="button" 
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-              <h3 className="font-medium text-base">Mitreisender {index + 1}</h3>
-              <input type="hidden" name={`mitreisende[${index}][id]`} value={gast.id || ''} />
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor={`mitreisende[${index}][vorname]`}>Vorname</Label>
-                  <Input
-                    id={`mitreisende[${index}][vorname]`}
-                    name={`mitreisende[${index}][vorname]`}
-                    defaultValue={gast.vorname}
-                    onChange={(e) => handleMitreisenderChange(index, 'vorname', e.target.value)}
-                    placeholder="Max"
-                  />
-                   {getErrorMessage(`mitreisende[${index}].vorname`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende[${index}].vorname`, formState.errors)}</p>}
-                </div>
-                <div>
-                  <Label htmlFor={`mitreisende[${index}][nachname]`}>Nachname</Label>
-                  <Input
-                    id={`mitreisende[${index}][nachname]`}
-                    name={`mitreisende[${index}][nachname]`}
-                    defaultValue={gast.nachname}
-                    onChange={(e) => handleMitreisenderChange(index, 'nachname', e.target.value)}
-                    placeholder="Muster"
-                  />
-                   {getErrorMessage(`mitreisende[${index}].nachname`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende[${index}].nachname`, formState.errors)}</p>}
-                </div>
-                <div>
-                  <Label htmlFor={`mitreisende[${index}][alter]`}>Alter</Label>
-                  <Input
-                    id={`mitreisende[${index}][alter]`}
-                    name={`mitreisende[${index}][alter]`}
-                    type="number"
-                    defaultValue={gast.alter?.toString()}
-                    onChange={(e) => handleMitreisenderChange(index, 'alter', e.target.value)}
-                    placeholder="30"
-                  />
-                   {getErrorMessage(`mitreisende[${index}].alter`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende[${index}].alter`, formState.errors)}</p>}
-                </div>
-              </div>
-              <div className="space-y-3">
-                <p className="text-sm font-medium">Ausweisdokumente (optional)</p>
-                <div>
-                  <Label htmlFor={`mitreisende[${index}][ausweisVorderseite]`} className="text-xs">Vorderseite</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input
-                        id={`mitreisende[${index}][ausweisVorderseite]`}
-                        name={`mitreisende[${index}][ausweisVorderseite]`}
-                        type="file"
-                        className="hidden"
-                        accept=".jpg,.jpeg,.png,.pdf"
-                        onChange={(e) => handleFileChange(index, 'vorderseite', e.target.files?.[0] || null)}
-                    />
-                    <Button asChild variant="outline" size="sm"><Label htmlFor={`mitreisende[${index}][ausweisVorderseite]`} className="cursor-pointer"><FileUp className="w-3 h-3 mr-1.5"/> Wählen</Label></Button>
-                    <span className="text-xs text-muted-foreground">{fileNames[gast.id || index.toString()]?.vorderseite || "Keine Datei"}</span>
-                  </div>
-                  {getErrorMessage(`mitreisende[${index}].ausweisVorderseite`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende[${index}].ausweisVorderseite`, formState.errors)}</p>}
-                </div>
-                <div>
-                  <Label htmlFor={`mitreisende[${index}][ausweisRückseite]`} className="text-xs">Rückseite</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Input
-                        id={`mitreisende[${index}][ausweisRückseite]`}
-                        name={`mitreisende[${index}][ausweisRückseite]`}
-                        type="file"
-                        className="hidden"
-                        accept=".jpg,.jpeg,.png,.pdf"
-                        onChange={(e) => handleFileChange(index, 'rueckseite', e.target.files?.[0] || null)}
-                    />
-                    <Button asChild variant="outline" size="sm"><Label htmlFor={`mitreisende[${index}][ausweisRückseite]`} className="cursor-pointer"><FileUp className="w-3 h-3 mr-1.5"/> Wählen</Label></Button>
-                    <span className="text-xs text-muted-foreground">{fileNames[gast.id || index.toString()]?.rueckseite || "Keine Datei"}</span>
-                  </div>
-                  {getErrorMessage(`mitreisende[${index}].ausweisRückseite`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende[${index}].ausweisRückseite`, formState.errors)}</p>}
-                </div>
-              </div>
-            </div>
-          ))}
-          <Button variant="outline" onClick={handleAddMitreisender} className="w-full sm:w-auto" type="button">
-            <PlusCircle className="w-4 h-4 mr-2" /> Weiteren Gast hinzufügen
+      
+      <div>
+        <Label htmlFor="zahlungsbeleg" className="block mb-1 text-sm font-medium">Zahlungsbeleg hochladen *</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            id="zahlungsbeleg"
+            name="zahlungsbeleg"
+            type="file"
+            className="hidden"
+            onChange={(e) => setFileNameBeleg(e.target.files?.[0]?.name || null)}
+            accept=".jpg,.jpeg,.png,.pdf"
+          />
+          <Button asChild variant="outline" size="sm">
+            <Label htmlFor="zahlungsbeleg" className="cursor-pointer">
+              <FileUp className="w-4 h-4 mr-2"/> Datei wählen
+            </Label>
           </Button>
-        </CardContent>
-      </Card>
+          <span className="text-sm text-muted-foreground">{fileNameBeleg || "Keine Datei ausgewählt"}</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF). Erst nach Upload und Validierung des Belegs wird die Buchung komplett bestätigt.</p>
+        {getErrorMessage("zahlungsbeleg", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsbeleg", formState.errors)}</p>}
+      </div>
     </div>
   );
 };
 
 
-const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ bookingDetails, formState, hauptgastSpecialRequests }) => {
-  const { pending } = useFormStatus();
-  const [selectedOption, setSelectedOption] = useState<'downpayment' | 'full_amount'>(
-    bookingDetails?.guestSubmittedData?.paymentAmountSelection || 'full_amount'
-  );
-
-  const totalPrice = bookingDetails?.price || 0;
-  const downPayment = totalPrice * 0.3;
-
-  const getPersonenText = () => {
-    const erwachsene = bookingDetails?.erwachsene || 0;
-    const kinder = bookingDetails?.kinder || 0;
-    const kleinkinder = bookingDetails?.kleinkinder || 0;
-    
-    const parts: string[] = [];
-    if (erwachsene > 0) parts.push(`${erwachsene} Erw.`);
-    if (kinder > 0) parts.push(`${kinder} Ki.`);
-    if (kleinkinder > 0) parts.push(`${kleinkinder} Klk.`);
-    
-    return parts.length > 0 ? parts.join(', ') : 'N/A';
-  };
-
+// --- Schritt 4: Übersicht & Bestätigung ---
+const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState, currentActionToken }) => {
+  // Hilfsfunktion zur Anzeige von Daten oder "N/A"
+  const display = (value?: string | number | null) => value || <span className="italic text-muted-foreground">N/A</span>;
+  const displayBool = (value?: boolean) => value ? "Ja" : "Nein";
 
   return (
-    <div className="space-y-8">
-      <Card className="bg-muted/20 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold text-primary">Ihre Buchungsdetails</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                    <p className="text-xs text-muted-foreground">Check-in</p>
-                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Check-out</p>
-                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Preis</p>
-                    <p className="font-semibold">{formatCurrency(bookingDetails?.price)}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Verpflegung</p>
-                    <p className="font-semibold capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
-                </div>
-            </div>
-            <Separator/>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
-                <div>
-                    <p className="text-xs text-muted-foreground">Hauptzimmer</p>
-                    <p className="font-semibold">{bookingDetails?.zimmertyp || 'N/A'}</p>
-                </div>
-                <div>
-                    <p className="text-xs text-muted-foreground">Personen</p>
-                    <p className="font-semibold">{getPersonenText()}</p>
-                </div>
-            </div>
-             {hauptgastSpecialRequests && (
-              <>
-                <Separator/>
-                <div>
-                    <p className="text-xs text-muted-foreground">Ihre Anmerkungen</p>
-                    <p className="font-medium whitespace-pre-wrap">{hauptgastSpecialRequests}</p>
-                </div>
-              </>
-            )}
-            {bookingDetails?.interneBemerkungen && (
-              <>
-                <Separator/>
-                <div>
-                    <p className="text-xs text-muted-foreground">Anmerkungen (Hotel)</p>
-                    <p className="font-medium whitespace-pre-wrap">{bookingDetails.interneBemerkungen}</p>
-                </div>
-              </>
-            )}
+    <div className="space-y-6">
+      <input type="hidden" name="currentActionToken" value={currentActionToken} />
+      <div>
+        <h2 className="text-xl font-semibold">Übersicht und Bestätigung</h2>
+        <p className="text-sm text-muted-foreground">Bitte überprüfen Sie Ihre Angaben sorgfältig, bevor Sie die Buchung abschließen.</p>
+      </div>
+
+      <Card className="bg-muted/30">
+        <CardHeader><CardTitle className="text-lg">Ihre Buchungsdetails</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p><strong>Zeitraum:</strong> {formatDateDisplay(bookingDetails?.checkInDate)} - {formatDateDisplay(bookingDetails?.checkOutDate)}</p>
+          <p><strong>Zimmer:</strong> {display(bookingDetails?.zimmertyp)} ({display(bookingDetails?.erwachsene)} Erw.)</p>
+          <p><strong>Verpflegung:</strong> {display(bookingDetails?.verpflegung)}</p>
+          <p><strong>Gesamtpreis:</strong> {formatCurrency(bookingDetails?.price)}</p>
         </CardContent>
       </Card>
 
-      <Card className="shadow-sm">
-        <CardHeader>
-            <CardTitle className="text-xl font-semibold">Zahlungssumme wählen</CardTitle>
-            <CardDescription>Wählen Sie, ob Sie eine Anzahlung oder den Gesamtbetrag leisten möchten.</CardDescription>
-        </CardHeader>
-        <CardContent>
-            <div className="flex items-center mb-4 text-sm">
-                <Mail className="w-4 h-4 mr-2 text-muted-foreground" />
-                <span>Wählen Sie Ihre bevorzugte Zahlungssumme *</span>
-            </div>
-            <RadioGroup
-                name="paymentSelection"
-                defaultValue={selectedOption}
-                onValueChange={(value: 'downpayment' | 'full_amount') => setSelectedOption(value)}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4"
-            >
-                <Label htmlFor="downpayment" className={cn(
-                    "border rounded-lg p-4 cursor-pointer transition-all",
-                    selectedOption === 'downpayment' ? "border-primary ring-2 ring-primary shadow-lg" : "border-border hover:shadow-md"
-                )}>
-                    <RadioGroupItem value="downpayment" id="downpayment" className="sr-only" />
-                    <div className="flex flex-col items-center text-center">
-                        <Landmark className="w-8 h-8 mb-2 text-muted-foreground" />
-                        <h3 className="font-semibold text-lg">Anzahlung</h3>
-                        <p className="text-sm text-muted-foreground">30% des Gesamtbetrags</p>
-                        <p className="text-xl font-bold mt-1">{formatCurrency(downPayment)}</p>
-                        {selectedOption === 'downpayment' && <CheckCircle2 className="w-5 h-5 text-primary mt-2" />}
-                    </div>
-                </Label>
-
-                 <Label htmlFor="full_amount" className={cn(
-                    "border rounded-lg p-4 cursor-pointer transition-all",
-                    selectedOption === 'full_amount' ? "border-primary ring-2 ring-primary shadow-lg" : "border-border hover:shadow-md"
-                )}>
-                    <RadioGroupItem value="full_amount" id="full_amount" className="sr-only" />
-                    <div className="flex flex-col items-center text-center">
-                        <Euro className="w-8 h-8 mb-2 text-muted-foreground" />
-                        <h3 className="font-semibold text-lg">Gesamtbetrag</h3>
-                        <p className="text-sm text-muted-foreground">100% des Gesamtbetrags</p>
-                        <p className="text-xl font-bold mt-1">{formatCurrency(totalPrice)}</p>
-                        {selectedOption === 'full_amount' && <CheckCircle2 className="w-5 h-5 text-primary mt-2" />}
-                    </div>
-                </Label>
-            </RadioGroup>
-            {getErrorMessage("paymentSelection", formState.errors) && <p className="text-xs text-destructive mt-2">{getErrorMessage("paymentSelection", formState.errors)}</p>}
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Ihre Daten (Hauptgast)</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p><strong>Anrede:</strong> {display(guestData?.anrede)}</p>
+          <p><strong>Name:</strong> {display(guestData?.gastVorname)} {display(guestData?.gastNachname)}</p>
+          <p><strong>Geburtsdatum:</strong> {formatDateDisplay(guestData?.geburtsdatum) || display(null)}</p>
+          <p><strong>E-Mail:</strong> {display(guestData?.email)}</p>
+          <p><strong>Telefon:</strong> {display(guestData?.telefon)}</p>
+          <Separator className="my-3" />
+          <p><strong>Dokumenttyp:</strong> {display(guestData?.hauptgastDokumenttyp)}</p>
+          <p><strong>Ausweis Vorderseite:</strong> {guestData?.hauptgastAusweisVorderseiteUrl ? <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
+          <p><strong>Ausweis Rückseite:</strong> {guestData?.hauptgastAusweisRückseiteUrl ? <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
         </CardContent>
       </Card>
-    </div>
-  );
-};
+      
+      <Card>
+        <CardHeader><CardTitle className="text-lg">Zahlungsinformationen</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <p><strong>Zahlungsart:</strong> {display(guestData?.zahlungsart)}</p>
+          <p><strong>Anzahlungsbetrag:</strong> {formatCurrency(guestData?.zahlungsbetrag)}</p>
+          <p><strong>Zahlungsdatum:</strong> {formatDateDisplay(guestData?.zahlungsdatum) || display(null)}</p>
+          <p><strong>Zahlungsbeleg:</strong> {guestData?.zahlungsbelegUrl ? <Link href={guestData.zahlungsbelegUrl} target="_blank" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
+          <p><strong>Zahlungsstatus:</strong> <Badge variant="secondary">Ausstehend</Badge></p>
+        </CardContent>
+      </Card>
 
-
-const ZahlungsinfoStep: React.FC<StepContentProps> = ({ formState }) => {
-  const { pending } = useFormStatus();
-  return (
-    <div>
-      <h2 className="text-xl font-semibold">Zahlungsinformationen</h2>
-      <p className="text-sm text-muted-foreground mb-4">Geben Sie Ihre Zahlungsdetails ein.</p>
-      <p className="text-center text-muted-foreground py-8">Dieser Schritt ist noch in Bearbeitung.</p>
+      <div className="space-y-4 pt-4 border-t">
+        <div className="flex items-start space-x-3">
+          <Checkbox id="agbAkzeptiert" name="agbAkzeptiert" defaultChecked={guestData?.agbAkzeptiert} />
+          <Label htmlFor="agbAkzeptiert" className="text-sm">
+            Ich akzeptiere die <Link href="/agb" target="_blank" className="underline text-primary">Allgemeinen Geschäftsbedingungen</Link> und die <Link href="/datenschutz" target="_blank" className="underline text-primary">Datenschutzbestimmungen</Link>.*
+          </Label>
+        </div>
+        {getErrorMessage("agbAkzeptiert", formState.errors) && <p className="text-xs text-destructive -mt-2 ml-9">{getErrorMessage("agbAkzeptiert", formState.errors)}</p>}
+         {/* Zweite Checkbox für Datenschutz (redundant zur ersten, aber so gefordert) */}
+        <div className="flex items-start space-x-3">
+            <Checkbox id="datenschutzAkzeptiert" name="datenschutzAkzeptiert" defaultChecked={guestData?.datenschutzAkzeptiert} />
+            <Label htmlFor="datenschutzAkzeptiert" className="text-sm">
+                Ich habe die <Link href="/datenschutz" target="_blank" className="underline text-primary">Datenschutzbestimmungen</Link> gelesen und stimme der Verarbeitung meiner Daten zu.*
+            </Label>
+        </div>
+        {getErrorMessage("datenschutzAkzeptiert", formState.errors) && <p className="text-xs text-destructive -mt-2 ml-9">{getErrorMessage("datenschutzAkzeptiert", formState.errors)}</p>}
+      </div>
     </div>
   );
 };
 
 
 export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [bookingDetails, setBookingDetails] = useState(initialBookingDetails); 
-  const [hauptgastSpecialRequests, setHauptgastSpecialRequests] = useState(initialBookingDetails?.guestSubmittedData?.specialRequests || "");
+  const { toast } = useToast();
+  const lastProcessedActionIdRef = useRef<string | undefined>(undefined);
 
-  useEffect(() => {
-    setBookingDetails(initialBookingDetails);
-    setHauptgastSpecialRequests(initialBookingDetails?.guestSubmittedData?.specialRequests || "");
-  }, [initialBookingDetails]);
+  const initialStep = useMemo(() => {
+    return initialBookingDetails?.guestSubmittedData?.lastCompletedStep || 0;
+  }, [initialBookingDetails?.guestSubmittedData?.lastCompletedStep]);
+  
+  const [currentStep, setCurrentStep] = useState(initialStep);
 
-
-  console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Current Step: ${currentStep}. Initial Booking Details:`, initialBookingDetails ? {...initialBookingDetails, guestSubmittedData: !!initialBookingDetails.guestSubmittedData} : null);
+  console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Initial Server Step: ${initialStep}, Current Client Step: ${currentStep}.`);
 
   const steps: Step[] = useMemo(() => [
-    { id: "hauptgast", name: "Hauptgast", Icon: UserCircle, StepIcon: UserCircle, Content: HauptgastStep, action: submitHauptgastAction },
-    { id: "mitreisende", name: "Mitreisende", Icon: Users, StepIcon: Users, Content: MitreisendeStep, action: submitMitreisendeAction },
-    { id: "zahlungssumme", name: "Zahlungssumme", Icon: WalletCards, StepIcon: WalletCards, Content: ZahlungssummeWaehlenStep, action: submitPaymentAmountSelectionAction },
-    { id: "zahlungsinfo", name: "Zahlungsinfo", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungsinfoStep, action: async () => ({success: true, message: "Platzhalter Zahlungsinfo übersprungen"}) },
+    { id: "gastdaten", name: "Kontaktdaten", Icon: UserCircle, StepIcon: UserCircle, Content: GastStammdatenStep, action: submitGastStammdatenAction },
+    { id: "ausweis", name: "Ausweis", Icon: FileText, StepIcon: FileText, Content: AusweisdokumenteStep, action: submitAusweisdokumenteAction },
+    { id: "zahlung", name: "Zahlung", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction },
+    { id: "uebersicht", name: "Bestätigung", Icon: CheckCircle, StepIcon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction },
   ], []);
 
-  const totalDisplaySteps = 5; 
-  const stepperLabels = ["Hauptgast", "Mitreisende", "Zahlungssumme", "Zahlungsinfo", "Bestätigung"];
+  const totalDisplaySteps = steps.length + 1; // +1 für den impliziten "Abgeschlossen"-Status
+  const stepperLabels = steps.map(s => s.name);
+  stepperLabels.push("Abgeschlossen"); // Label für den finalen Zustand
 
-  const boundAction = steps[currentStep]?.action
-    ? steps[currentStep].action!.bind(null, bookingToken)
-    : async (prevState: FormState, formData: FormData) => {
-        console.error("[GuestBookingFormStepper] Fehler: Aktion für den aktuellen Schritt nicht gefunden oder ungültiger Schritt.", currentStep, steps);
-        return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig.", errors: null, success: false });
-      };
+  // Bestimme die aktuelle Action basierend auf currentStep
+  const currentAction = currentStep < steps.length ? steps[currentStep].action.bind(null, bookingToken) : async () => initialFormState;
+  const [formState, formAction, isPending] = useActionState(currentAction, initialFormState);
 
-  const [formState, formAction] = useActionState(boundAction, initialFormState);
-  const { toast } = useToast();
-
+  // Effekt zur Behandlung der Server-Antwort und Navigation
   useEffect(() => {
     if (formState.message) {
       toast({
@@ -583,53 +403,46 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
       });
     }
 
-    if (formState.success && currentStep < steps.length -1) {
-      // Nur weiterschalten, wenn die Aktion erfolgreich war und es noch weitere interaktive Schritte gibt
-      setCurrentStep(prev => prev + 1);
-       // Formularstatus zurücksetzen, damit der Toast nicht erneut erscheint, wenn der Benutzer zurück navigiert
-       // und dann wieder vorwärts, ohne die Aktion erneut auszulösen.
-       // Dies sollte idealerweise im useActionState Hook selbst passieren, wenn er zurückgesetzt wird,
-       // aber hier manuell für Klarheit und sofortige Wirkung.
-       // WICHTIG: Dies ist ein Workaround. Ein besseres State-Management für formState wäre, es
-       // explizit zurückzusetzen oder useActionState so zu verwenden, dass es sich bei neuer Action zurücksetzt.
-       // Für den Moment, um das Springen zu verhindern:
-       // (initialFormState as any).success = false; // Temporary hack, not ideal
-    } else if (formState.success && currentStep === steps.length - 1) {
-      // Letzter interaktiver Schritt erfolgreich, Formular ist quasi abgeschlossen
-      // Die Seite /buchung/[token] sollte nun die finale Bestätigungsnachricht anzeigen,
-      // basierend auf dem aktualisierten Booking-Status (z.B. "Confirmed")
-      console.log("[GuestBookingFormStepper] Alle interaktiven Schritte abgeschlossen.");
+    if (formState.success && formState.actionToken && lastProcessedActionIdRef.current !== formState.actionToken) {
+      lastProcessedActionIdRef.current = formState.actionToken; // Aktion als verarbeitet markieren
+      if (currentStep < steps.length - 1) {
+        console.log(`[GuestBookingFormStepper] Action for step ${currentStep} successful. Navigating to next step.`);
+        setCurrentStep(prev => prev + 1);
+      } else if (currentStep === steps.length - 1) {
+        // Letzter interaktiver Schritt erfolgreich, Formular ist abgeschlossen
+        console.log("[GuestBookingFormStepper] All interactive steps completed. Finalizing.");
+        // Hier könnte man currentStep auf steps.length setzen, um den "Abgeschlossen"-Zustand zu erreichen
+        setCurrentStep(steps.length); 
+      }
     }
-  }, [formState, toast, currentStep, steps.length]);
+  }, [formState, toast, currentStep, steps]);
+  
 
-
-  if (!steps || currentStep < 0 ) {
-     console.error("[GuestBookingFormStepper] Invalid steps array or currentStep index.", currentStep, steps);
-     return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
+  if (!initialBookingDetails) {
+    return (
+        <Card className="w-full max-w-lg mx-auto shadow-lg">
+            <CardHeader className="items-center text-center"><AlertCircle className="w-12 h-12 text-destructive mb-3" /><CardTitle>Fehler</CardTitle></CardHeader>
+            <CardContent><CardDescription>Buchungsdetails konnten nicht geladen werden.</CardDescription></CardContent>
+        </Card>
+    );
   }
-
-
-  if (currentStep >= steps.length ) {
-     // Dieser Zustand sollte erreicht werden, nachdem der letzte interaktive Schritt erfolgreich war.
-     // Die übergeordnete Seite /buchung/[token]/page.tsx sollte dann die finale Bestätigungsnachricht zeigen.
-     // Dieser return-Block dient als Fallback oder für den Fall, dass die Seite nicht neu geladen wird
-     // um den finalen Status zu zeigen.
-    console.warn("[GuestBookingFormStepper] currentStep ist jenseits der definierten interaktiven Schritte. Aktueller Schritt:", currentStep, "Anzahl Schritte:", steps.length);
+  
+  // Zustand, nachdem alle Schritte durchlaufen wurden oder wenn Buchung bereits "Confirmed"
+  if (currentStep >= steps.length || initialBookingDetails.status === "Confirmed") {
     return (
       <>
         <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
             <PradellLogo className="mb-8" />
             <Card className="w-full shadow-xl">
                 <CardHeader className="items-center text-center">
-                { formState.success || bookingDetails?.status === "Confirmed" ? <CheckCircle className="w-16 h-16 text-green-500 mb-4" /> : <Info className="w-16 h-16 text-blue-500 mb-4" /> }
-                <CardTitle className="text-2xl">Buchungsabschluss</CardTitle>
+                <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
+                <CardTitle className="text-2xl">Buchung abgeschlossen!</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
                 <CardDescription>
-                    { formState.success || bookingDetails?.status === "Confirmed" ? `Vielen Dank, ${bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.` 
-                                      : "Das Formular wurde bereits abgeschlossen oder befindet sich in einem unerwarteten Zustand." }
+                    Vielen Dank, {initialBookingDetails?.guestSubmittedData?.gastVorname || initialBookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt und Ihre Buchung ist nun bestätigt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.
                 </CardDescription>
-                { (formState.success || bookingDetails?.status === "Confirmed") && <p className="mt-2">Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>}
+                <p className="mt-2">Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>
                 <p className="mt-4 text-muted-foreground">Sie können diese Seite nun schließen oder <Link href="/" className="text-primary underline">zur Startseite</Link> zurückkehren.</p>
                 </CardContent>
             </Card>
@@ -641,25 +454,24 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   const ActiveStepContent = steps[currentStep].Content;
   const CurrentStepIconComponent = steps[currentStep].Icon; 
   const stepNumberForDisplay = currentStep + 1;
-  const { pending } = useFormStatus(); // Bezieht sich auf die Action des aktuellen Schritts
 
   return (
     <>
       <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         <PradellLogo className="mb-8" />
         <CardTitle className="text-3xl font-bold text-center mb-2">Buchung vervollständigen</CardTitle>
-        <p className="text-center text-muted-foreground mb-10">Schritt {stepNumberForDisplay} von {totalDisplaySteps} - {stepperLabels[currentStep]}</p>
+        <p className="text-center text-muted-foreground mb-10">Schritt {stepNumberForDisplay} von {steps.length} - {steps[currentStep].name}</p>
 
         <div className="mb-12">
           <ol className="flex items-center w-full">
-            {stepperLabels.map((label, index) => {
-              const StepIconComponent = steps[index] ? steps[index].StepIcon : null; // Korrigiert: StepIconComponent statt StepIcon
+            {steps.map((step, index) => {
+              const StepIconComponent = step.StepIcon;
               return (
               <li
-                key={label}
+                key={step.id}
                 className={cn(
                   "flex w-full items-center",
-                  index < totalDisplaySteps - 1 ? "after:content-[''] after:w-full after:h-0.5 after:border-b after:border-muted after:inline-block" : "",
+                  index < steps.length - 1 ? "after:content-[''] after:w-full after:h-0.5 after:border-b after:border-muted after:inline-block" : "",
                   index < currentStep ? "after:border-primary" : "",
                   index === currentStep && "font-semibold"
                 )}
@@ -679,7 +491,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                       "text-xs px-1", 
                        index <= currentStep ? "text-primary" : "text-muted-foreground"
                   )}>
-                      {label}
+                      {step.name}
                   </span>
                 </span>
               </li>
@@ -699,10 +511,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
             <form action={formAction}>
               <ActiveStepContent
                 bookingToken={bookingToken}
-                bookingDetails={bookingDetails}
+                bookingDetails={initialBookingDetails}
+                guestData={initialBookingDetails?.guestSubmittedData}
                 formState={formState}
-                hauptgastSpecialRequests={hauptgastSpecialRequests}
-                setHauptgastSpecialRequests={setHauptgastSpecialRequests} 
+                currentActionToken={lastProcessedActionIdRef.current || initialFormState.actionToken}
               />
               {formState.message && !formState.success && Object.keys(formState.errors || {}).length === 0 && (
                 <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center">
@@ -713,21 +525,16 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                 {currentStep > 0 ? (
                     <Button variant="outline" onClick={() => {
                         setCurrentStep(prev => prev -1);
-                        // Formularstatus zurücksetzen, um alte Fehlermeldungen zu löschen
-                        // Dies sollte idealerweise über eine Reset-Funktion des useActionState oder
-                        // durch Neumontage der Komponente geschehen.
-                        // (initialFormState as any).errors = null; 
-                        // (initialFormState as any).message = null;
-                        // (initialFormState as any).success = false;
-                    }} type="button" disabled={pending}>
+                        lastProcessedActionIdRef.current = undefined; // Erlaube erneutes Absenden des vorherigen Schritts
+                    }} type="button" disabled={isPending}>
                         Zurück
                     </Button>
                 ) : <div></div> 
                 }
                 
-                <Button type="submit" disabled={pending}>
-                    {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 
-                     (currentStep === steps.length -1 ? "Buchung abschließen" : `Weiter zu Schritt ${currentStep + 2}`)}
+                <Button type="submit" disabled={isPending}>
+                    {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 
+                     (currentStep === steps.length -1 ? "Buchung abschließen & Bestätigen" : `Weiter zu Schritt ${currentStep + 2}`)}
                 </Button>
                </div>
             </form>
@@ -737,5 +544,3 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     </>
   );
 }
-
-    
