@@ -9,16 +9,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, CheckCircle, FileUp, Loader2, UserCircle, MessageSquare } from "lucide-react";
+import { AlertCircle, CheckCircle, FileUp, Loader2, UserCircle, MessageSquare, Info } from "lucide-react";
 import { submitGuestPersonalDataAction, submitGuestDocumentsAction, submitGuestSpecialRequestsAction } from "@/lib/actions";
 import type { Booking } from "@/lib/definitions";
 import { cn } from "@/lib/utils";
+import { format } from 'date-fns';
+import { de } from 'date-fns/locale';
 
 interface Step {
   id: string;
   name: string;
   icon: React.ElementType;
-  fields?: string[]; 
+  fields?: string[];
   Content: React.FC<StepContentProps>;
   action?: (bookingToken: string, prevState: any, formData: FormData) => Promise<any>;
 }
@@ -27,7 +29,7 @@ interface StepContentProps {
   bookingToken: string;
   bookingDetails?: Booking | null;
   formState: FormState;
-  onNext?: () => void; 
+  onNext?: () => void;
 }
 
 type FormState = {
@@ -38,6 +40,12 @@ type FormState = {
 
 const initialFormState: FormState = { message: null, errors: null, success: false };
 
+// Helper function to format Zod errors for display
+const getErrorMessage = (fieldName: string, errors: FormState['errors']): string | undefined => {
+  return errors?.[fieldName]?.[0];
+};
+
+
 // Step 1: Personal Data
 const PersonalDataStep: React.FC<StepContentProps> = ({ bookingToken, formState }) => {
   const { pending } = useFormStatus();
@@ -47,23 +55,23 @@ const PersonalDataStep: React.FC<StepContentProps> = ({ bookingToken, formState 
         <div>
           <Label htmlFor="fullName">Vollständiger Name</Label>
           <Input id="fullName" name="fullName" required />
-          {formState.errors?.fullName && <p className="text-xs text-destructive mt-1">{formState.errors.fullName[0]}</p>}
+          {getErrorMessage("fullName", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("fullName", formState.errors)}</p>}
         </div>
         <div>
           <Label htmlFor="email">E-Mail</Label>
           <Input id="email" name="email" type="email" required />
-          {formState.errors?.email && <p className="text-xs text-destructive mt-1">{formState.errors.email[0]}</p>}
+          {getErrorMessage("email", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("email", formState.errors)}</p>}
         </div>
       </div>
       <div>
         <Label htmlFor="phone">Telefonnummer</Label>
         <Input id="phone" name="phone" required />
-        {formState.errors?.phone && <p className="text-xs text-destructive mt-1">{formState.errors.phone[0]}</p>}
+        {getErrorMessage("phone", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("phone", formState.errors)}</p>}
       </div>
       <div>
         <Label htmlFor="addressLine1">Adresse Zeile 1</Label>
         <Input id="addressLine1" name="addressLine1" required />
-        {formState.errors?.addressLine1 && <p className="text-xs text-destructive mt-1">{formState.errors.addressLine1[0]}</p>}
+        {getErrorMessage("addressLine1", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("addressLine1", formState.errors)}</p>}
       </div>
       <div>
         <Label htmlFor="addressLine2">Adresse Zeile 2 (Optional)</Label>
@@ -73,17 +81,17 @@ const PersonalDataStep: React.FC<StepContentProps> = ({ bookingToken, formState 
         <div>
           <Label htmlFor="city">Stadt</Label>
           <Input id="city" name="city" required />
-          {formState.errors?.city && <p className="text-xs text-destructive mt-1">{formState.errors.city[0]}</p>}
+          {getErrorMessage("city", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("city", formState.errors)}</p>}
         </div>
         <div>
           <Label htmlFor="postalCode">Postleitzahl</Label>
           <Input id="postalCode" name="postalCode" required />
-          {formState.errors?.postalCode && <p className="text-xs text-destructive mt-1">{formState.errors.postalCode[0]}</p>}
+          {getErrorMessage("postalCode", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("postalCode", formState.errors)}</p>}
         </div>
         <div>
           <Label htmlFor="country">Land</Label>
           <Input id="country" name="country" required />
-          {formState.errors?.country && <p className="text-xs text-destructive mt-1">{formState.errors.country[0]}</p>}
+          {getErrorMessage("country", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("country", formState.errors)}</p>}
         </div>
       </div>
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
@@ -119,7 +127,7 @@ const DocumentUploadStep: React.FC<StepContentProps> = ({ bookingToken, formStat
       <p className="text-xs text-muted-foreground">
         Sie können mehrere Dateien auswählen. Max. Dateigröße pro Datei: 5MB. Akzeptierte Formate: JPG, PNG, PDF.
       </p>
-      {formState.errors?.documents && <p className="text-xs text-destructive mt-1">{formState.errors.documents[0]}</p>}
+      {getErrorMessage("documents", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("documents", formState.errors)}</p>}
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Weiter
@@ -135,7 +143,7 @@ const SpecialRequestsStep: React.FC<StepContentProps> = ({ bookingToken, formSta
     <div className="space-y-4">
       <Label htmlFor="specialRequests">Sonderwünsche (Optional)</Label>
       <Textarea id="specialRequests" name="specialRequests" placeholder="z.B. Allergien, späte Anreise, Zimmerpräferenzen..." rows={4}/>
-      {formState.errors?.specialRequests && <p className="text-xs text-destructive mt-1">{formState.errors.specialRequests[0]}</p>}
+      {getErrorMessage("specialRequests", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("specialRequests", formState.errors)}</p>}
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Buchung abschließen
@@ -144,30 +152,54 @@ const SpecialRequestsStep: React.FC<StepContentProps> = ({ bookingToken, formSta
   );
 };
 
+const formatVerpflegung = (verpflegung?: string) => {
+  if (!verpflegung) return "";
+  switch (verpflegung.toLowerCase()) {
+    case "fruehstueck": return "Frühstück";
+    case "halbpension": return "Halbpension";
+    case "vollpension": return "Vollpension";
+    case "ohne": return "Ohne Verpflegung";
+    default: return verpflegung;
+  }
+};
+
+const formatZimmertyp = (zimmertyp?: string) => {
+  if (!zimmertyp) return "Standard";
+  switch (zimmertyp.toLowerCase()) {
+    case "standard": return "Standard Zimmer";
+    case "einzelzimmer": return "Einzelzimmer";
+    case "doppelzimmer": return "Doppelzimmer";
+    case "suite": return "Suite";
+    case "familienzimmer": return "Familienzimmer";
+    default: return zimmertyp;
+  }
+};
+
 
 export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const [currentStep, setCurrentStep] = useState(0);
 
   const steps: Step[] = useMemo(() => [
     { id: "personal-data", name: "Persönliche Daten", icon: UserCircle, Content: PersonalDataStep, action: submitGuestPersonalDataAction },
-    { id: "documents", name: "Dokumente", icon: FileUp, Content: DocumentUploadStep, action: submitGuestDocumentsAction },
+    { id: "documents", name: "Dokumente (Optional)", icon: FileUp, Content: DocumentUploadStep, action: submitGuestDocumentsAction },
     { id: "special-requests", name: "Sonderwünsche", icon: MessageSquare, Content: SpecialRequestsStep, action: submitGuestSpecialRequestsAction },
   ], []);
 
   const [formState, formAction] = useActionState(
     (prevState: FormState, formData: FormData) => {
-      // Ensure currentStep is within bounds before accessing steps[currentStep]
       if (currentStep >= 0 && currentStep < steps.length) {
         const currentAction = steps[currentStep].action;
         if (currentAction) {
-          const boundAction = currentAction.bind(null, bookingToken);
-          return boundAction(prevState, formData);
+          // Bind bookingToken to the action
+          return currentAction(bookingToken, prevState, formData);
         }
       }
-      return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig", errors: null, success: false });
+      console.error("Fehler: Aktion für den aktuellen Schritt nicht gefunden oder ungültiger Schritt.", currentStep, steps);
+      return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig.", errors: null, success: false });
     },
     initialFormState
   );
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -181,23 +213,18 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
 
     if (formState.success && currentStep < steps.length - 1) {
       setCurrentStep(prev => prev + 1);
-       // Reset formState for the next step to avoid carrying over success/error messages
-       // This is a common pattern, but useActionState itself doesn't auto-reset.
-       // If your actions don't reset the state, you might need a manual reset mechanism if problems arise.
-    } else if (formState.success && currentStep === steps.length - 1) {
-      // Final step success actions (e.g., show completion message)
-      // This is handled by the ThankYouCard now
+      // Reset formState for the next step.
+      // This can be tricky with useActionState as it doesn't auto-reset.
+      // A common pattern is to rely on the action itself to return a fresh initial state upon success if that's desired.
+      // For now, the state will persist, which means success messages might linger until a new action is dispatched.
     }
-  }, [formState, toast, currentStep, steps.length]);
+  }, [formState, toast, currentStep, steps]); // Removed steps.length from deps as steps is memoized
 
 
-  // Defensive check: if steps or currentStep is invalid, render nothing or an error
-  if (!steps || currentStep < 0 || currentStep >= steps.length) {
-     console.error("GuestBookingFormStepper: Invalid steps or currentStep index.", currentStep, steps);
+  if (!steps || currentStep < 0 || currentStep > steps.length) { // Check currentStep against steps.length (allow currentStep to be steps.length for completion message)
+     console.error("GuestBookingFormStepper: Invalid steps array or currentStep index.", currentStep, steps);
      return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
   }
-  
-  const ActiveStepContent = steps[currentStep].Content;
 
   if (formState.success && currentStep === steps.length - 1) {
     return (
@@ -206,7 +233,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
           <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
           <CardTitle className="text-2xl">Buchung erfolgreich abgeschlossen!</CardTitle>
           <CardDescription>
-            Vielen Dank! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.
+            Vielen Dank, {bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center">
@@ -216,11 +243,24 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
       </Card>
     );
   }
+  
+  // This should be checked after the completion message
+  if (currentStep >= steps.length) {
+    // This case should ideally not be reached if the completion logic is correct
+    // but as a fallback:
+    return <p>Formular bereits abgeschlossen oder ungültiger Status.</p>;
+  }
+
+  const ActiveStepContent = steps[currentStep].Content;
+
+  const numAdults = bookingDetails?.erwachsene ?? 0;
+  const numChildren = bookingDetails?.kinder ?? 0;
+  const numInfants = bookingDetails?.kleinkinder ?? 0;
 
   return (
     <Card className="w-full max-w-2xl mx-auto shadow-xl">
       <CardHeader>
-        <div className="mb-4">
+        <div className="mb-6">
           <ol className="flex items-center w-full">
             {steps.map((step, index) => (
               <li
@@ -243,9 +283,27 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails }: { book
           </ol>
            <p className="text-center mt-2 text-sm font-medium">{steps[currentStep].name}</p>
         </div>
-        <CardTitle>Buchungsdaten vervollständigen</CardTitle>
-        <CardDescription>
-          Hallo {bookingDetails?.guestFirstName || 'Gast'}, bitte füllen Sie die folgenden Schritte aus, um Ihre Buchung abzuschließen.
+        <CardTitle className="text-2xl">Buchungsdaten vervollständigen</CardTitle>
+        <CardDescription className="text-base mt-2 space-y-1">
+          <p>Hallo {bookingDetails?.guestFirstName || 'Gast'}, Ihre Buchung für</p>
+          <p className="font-semibold">
+            ein {formatZimmertyp(bookingDetails?.zimmertyp)}
+            {bookingDetails?.verpflegung && bookingDetails.verpflegung !== "ohne" ? ` mit ${formatVerpflegung(bookingDetails.verpflegung)}` : ""}
+          </p>
+          <p>
+            für {numAdults} Erwachsene
+            {numChildren > 0 ? `, ${numChildren} Kind(er)` : ""}
+            {numInfants > 0 ? ` und ${numInfants} Kleinkind(er)` : ""}
+            {bookingDetails?.alterKinder && numChildren > 0 ? ` (Alter: ${bookingDetails.alterKinder})` : ""}
+          </p>
+          <p>
+            vom <span className="font-semibold">{bookingDetails?.checkInDate ? format(new Date(bookingDetails.checkInDate), "dd.MM.yyyy", { locale: de }) : 'N/A'}</span>
+            bis <span className="font-semibold">{bookingDetails?.checkOutDate ? format(new Date(bookingDetails.checkOutDate), "dd.MM.yyyy", { locale: de }) : 'N/A'}</span>
+          </p>
+          <p>
+            zum Preis von <span className="font-semibold">{bookingDetails?.price ? new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(bookingDetails.price) : 'N/A'}</span>
+          </p>
+          <p className="pt-2">ist fast abgeschlossen. Bitte füllen Sie die folgenden Schritte aus:</p>
         </CardDescription>
       </CardHeader>
       <CardContent>
