@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; // Für Special Requests, falls in Schritt 4 benötigt
+import { Textarea } from "@/components/ui/textarea"; 
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent } from "lucide-react";
@@ -25,12 +25,13 @@ import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge"; // Ensure Badge is imported
 
 interface Step {
   id: string;
   name: string;
-  Icon: React.ElementType; // Icon für den Schritt-Titel in der Karte
-  StepIcon: React.ElementType; // Icon für die Stepper-Navigation oben
+  Icon: React.ElementType; 
+  StepIcon: React.ElementType; 
   Content: React.FC<StepContentProps>;
   action: (bookingToken: string, prevState: any, formData: FormData) => Promise<FormState>;
 }
@@ -38,16 +39,16 @@ interface Step {
 interface StepContentProps {
   bookingToken: string;
   bookingDetails?: Booking | null;
-  guestData?: GuestSubmittedData | null; // Aktueller Stand der vom Gast übermittelten Daten
+  guestData?: GuestSubmittedData | null; 
   formState: FormState;
-  currentActionToken?: string; // Um den aktuellen actionToken an die Form zu binden
+  currentActionToken?: string; 
 }
 
 type FormState = {
   message?: string | null;
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
-  actionToken?: string; // Eindeutiger Token für jede erfolgreiche Aktion
+  actionToken?: string; 
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined };
@@ -296,9 +297,7 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
 
 // --- Schritt 4: Übersicht & Bestätigung ---
 const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState, currentActionToken }) => {
-  // Hilfsfunktion zur Anzeige von Daten oder "N/A"
   const display = (value?: string | number | null) => value || <span className="italic text-muted-foreground">N/A</span>;
-  const displayBool = (value?: boolean) => value ? "Ja" : "Nein";
 
   return (
     <div className="space-y-6">
@@ -352,7 +351,7 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
           </Label>
         </div>
         {getErrorMessage("agbAkzeptiert", formState.errors) && <p className="text-xs text-destructive -mt-2 ml-9">{getErrorMessage("agbAkzeptiert", formState.errors)}</p>}
-         {/* Zweite Checkbox für Datenschutz (redundant zur ersten, aber so gefordert) */}
+        
         <div className="flex items-start space-x-3">
             <Checkbox id="datenschutzAkzeptiert" name="datenschutzAkzeptiert" defaultChecked={guestData?.datenschutzAkzeptiert} />
             <Label htmlFor="datenschutzAkzeptiert" className="text-sm">
@@ -368,7 +367,7 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
 
 export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const { toast } = useToast();
-  const lastProcessedActionIdRef = useRef<string | undefined>(undefined);
+  const lastProcessedActionTokenRef = useRef<string | undefined>(undefined);
 
   const initialStep = useMemo(() => {
     return initialBookingDetails?.guestSubmittedData?.lastCompletedStep || 0;
@@ -376,7 +375,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   
   const [currentStep, setCurrentStep] = useState(initialStep);
 
-  console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Initial Server Step: ${initialStep}, Current Client Step: ${currentStep}.`);
+  console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Initial Server Step: ${initialStep}, Current Client Step: ${currentStep}. Last processed action token: ${lastProcessedActionTokenRef.current}`);
 
   const steps: Step[] = useMemo(() => [
     { id: "gastdaten", name: "Kontaktdaten", Icon: UserCircle, StepIcon: UserCircle, Content: GastStammdatenStep, action: submitGastStammdatenAction },
@@ -385,17 +384,15 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     { id: "uebersicht", name: "Bestätigung", Icon: CheckCircle, StepIcon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction },
   ], []);
 
-  const totalDisplaySteps = steps.length + 1; // +1 für den impliziten "Abgeschlossen"-Status
   const stepperLabels = steps.map(s => s.name);
-  stepperLabels.push("Abgeschlossen"); // Label für den finalen Zustand
 
-  // Bestimme die aktuelle Action basierend auf currentStep
   const currentAction = currentStep < steps.length ? steps[currentStep].action.bind(null, bookingToken) : async () => initialFormState;
   const [formState, formAction, isPending] = useActionState(currentAction, initialFormState);
 
-  // Effekt zur Behandlung der Server-Antwort und Navigation
   useEffect(() => {
-    if (formState.message) {
+    console.log("[GuestBookingFormStepper useEffect] formState changed:", formState);
+    if (formState.message && (formState.actionToken !== lastProcessedActionTokenRef.current || !formState.success)) {
+        // Zeige Toast nur, wenn es eine neue Aktion ist oder ein Fehler vorliegt
       toast({
         title: formState.success ? "Erfolg" : "Hinweis",
         description: formState.message,
@@ -403,32 +400,33 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
       });
     }
 
-    if (formState.success && formState.actionToken && lastProcessedActionIdRef.current !== formState.actionToken) {
-      lastProcessedActionIdRef.current = formState.actionToken; // Aktion als verarbeitet markieren
+    if (formState.success && formState.actionToken && formState.actionToken !== lastProcessedActionTokenRef.current) {
+      console.log(`[GuestBookingFormStepper useEffect] Action with token ${formState.actionToken} successful. lastProcessedActionTokenRef was ${lastProcessedActionTokenRef.current}. Current step: ${currentStep}`);
+      lastProcessedActionTokenRef.current = formState.actionToken; 
       if (currentStep < steps.length - 1) {
-        console.log(`[GuestBookingFormStepper] Action for step ${currentStep} successful. Navigating to next step.`);
+        console.log(`[GuestBookingFormStepper useEffect] Navigating from step ${currentStep} to ${currentStep + 1}`);
         setCurrentStep(prev => prev + 1);
       } else if (currentStep === steps.length - 1) {
-        // Letzter interaktiver Schritt erfolgreich, Formular ist abgeschlossen
-        console.log("[GuestBookingFormStepper] All interactive steps completed. Finalizing.");
-        // Hier könnte man currentStep auf steps.length setzen, um den "Abgeschlossen"-Zustand zu erreichen
+        console.log("[GuestBookingFormStepper useEffect] All interactive steps completed. Finalizing.");
         setCurrentStep(steps.length); 
       }
+    } else if (formState.success && formState.actionToken && formState.actionToken === lastProcessedActionTokenRef.current) {
+        console.log(`[GuestBookingFormStepper useEffect] Action with token ${formState.actionToken} was already processed. No navigation.`);
     }
   }, [formState, toast, currentStep, steps]);
   
 
   if (!initialBookingDetails) {
     return (
-        <Card className="w-full max-w-lg mx-auto shadow-lg">
-            <CardHeader className="items-center text-center"><AlertCircle className="w-12 h-12 text-destructive mb-3" /><CardTitle>Fehler</CardTitle></CardHeader>
-            <CardContent><CardDescription>Buchungsdetails konnten nicht geladen werden.</CardDescription></CardContent>
-        </Card>
+      <Card className="w-full max-w-lg mx-auto shadow-lg">
+        <CardHeader className="items-center text-center"><AlertCircle className="w-12 h-12 text-destructive mb-3" /><CardTitle>Fehler</CardTitle></CardHeader>
+        <CardContent><CardDescription>Buchungsdetails konnten nicht geladen werden.</CardDescription></CardContent>
+      </Card>
     );
   }
   
-  // Zustand, nachdem alle Schritte durchlaufen wurden oder wenn Buchung bereits "Confirmed"
   if (currentStep >= steps.length || initialBookingDetails.status === "Confirmed") {
+    console.log(`[GuestBookingFormStepper] Reached final state. currentStep: ${currentStep}, booking status: ${initialBookingDetails.status}`);
     return (
       <>
         <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -465,7 +463,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <div className="mb-12">
           <ol className="flex items-center w-full">
             {steps.map((step, index) => {
-              const StepIconComponent = step.StepIcon;
+              const StepIcon = step.StepIcon; // Assign to a capitalized variable
               return (
               <li
                 key={step.id}
@@ -485,7 +483,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                       index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" :
                       "bg-muted text-muted-foreground border"
                   )}>
-                    {index < currentStep ? <Check className="w-5 h-5" /> : (StepIconComponent ? <StepIconComponent className="w-5 h-5"/> : index +1) }
+                    {index < currentStep ? <Check className="w-5 h-5" /> : (StepIcon ? <StepIcon className="w-5 h-5"/> : index +1) }
                   </span>
                   <span className={cn(
                       "text-xs px-1", 
@@ -514,7 +512,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                 bookingDetails={initialBookingDetails}
                 guestData={initialBookingDetails?.guestSubmittedData}
                 formState={formState}
-                currentActionToken={lastProcessedActionIdRef.current || initialFormState.actionToken}
+                currentActionToken={lastProcessedActionTokenRef.current || initialFormState.actionToken}
               />
               {formState.message && !formState.success && Object.keys(formState.errors || {}).length === 0 && (
                 <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center">
@@ -524,8 +522,9 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                <div className="flex justify-between items-center mt-8 pt-6 border-t">
                 {currentStep > 0 ? (
                     <Button variant="outline" onClick={() => {
+                        console.log(`[GuestBookingFormStepper] Back button clicked. Current step: ${currentStep}, moving to ${currentStep -1}`);
+                        // lastProcessedActionTokenRef.current = undefined; // Erlaube erneutes Absenden des vorherigen Schritts
                         setCurrentStep(prev => prev -1);
-                        lastProcessedActionIdRef.current = undefined; // Erlaube erneutes Absenden des vorherigen Schritts
                     }} type="button" disabled={isPending}>
                         Zurück
                     </Button>
@@ -544,3 +543,5 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     </>
   );
 }
+
+    
