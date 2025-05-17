@@ -12,15 +12,17 @@ console.log(`[Module /buchung/[token]/page.tsx] Module evaluated at ${new Date()
 async function getBookingByToken(token: string): Promise<Booking | null> {
   console.log(`[Server getBookingByToken] Attempting to fetch booking for token: "${token}" at ${new Date().toISOString()}`);
   
-  // Log the current state of MOCK_BOOKINGS_DB that this function sees
-  // This call to getMockBookings() itself logs the internal state of the DB via findMockBookingByToken
+  // This call to findMockBookingByToken() itself logs the internal state of the DB
   const booking = findMockBookingByToken(token); 
 
   if (booking) {
-    console.log(`[Server getBookingByToken] Successfully found booking for token "${token}". Status: ${booking.status}`);
-    return booking;
+    console.log(`[Server getBookingByToken] Successfully found booking for token "${token}". Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
+    return booking; // Already a deep copy from findMockBookingByToken
   } else {
     console.warn(`[Server getBookingByToken] No booking found for token "${token}" by findMockBookingByToken.`);
+    // Log current DB state again for direct comparison if booking not found
+    const currentBookingsInDbForDebug = getMockBookings(); // This also logs
+    console.warn(`[Server getBookingByToken] For missing token "${token}", current tokens in DB from getMockBookings(): [${currentBookingsInDbForDebug.map(b => b.bookingToken).join(', ')}]`);
     return null;
   }
 }
@@ -32,13 +34,10 @@ export default async function GuestBookingPage({ params }: { params: { token: st
 
   if (!booking) {
     console.error(`[Server GuestBookingPage] Booking not found for token "${params.token}" (getBookingByToken returned null). Calling notFound().`);
-    // Before calling notFound, let's log the available tokens one last time from this context
-    const currentBookingsInDb = getMockBookings();
-    console.error(`[Server GuestBookingPage] For token "${params.token}", current tokens in DB from getMockBookings(): [${currentBookingsInDb.map(b => b.bookingToken).join(', ')}]`);
     notFound();
   }
   
-  console.log(`[Server GuestBookingPage] Booking data retrieved for token "${params.token}":`, JSON.stringify(booking, null, 2));
+  console.log(`[Server GuestBookingPage] Booking data retrieved for token "${params.token}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
 
   // Check if guest data was already submitted and booking is confirmed
   if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
@@ -101,7 +100,3 @@ export default async function GuestBookingPage({ params }: { params: { token: st
       </Card>
   );
 }
-
-// Enable Edge runtime for this page if possible, or ensure nodejs runtime handles state well.
-// For mock data, this is less critical than with a real DB.
-// export const runtime = 'edge'; // Consider if compatible with all features
