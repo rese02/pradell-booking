@@ -23,8 +23,8 @@ import { Separator } from "@/components/ui/separator";
 interface Step {
   id: string;
   name: string;
-  Icon: React.ElementType; 
-  StepIcon: React.ElementType; 
+  Icon: React.ElementType;
+  StepIcon: React.ElementType;
   Content: React.FC<StepContentProps>;
   action?: (bookingToken: string, prevState: any, formData: FormData) => Promise<any>;
 }
@@ -44,7 +44,7 @@ type FormState = {
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
   // To pass updated booking details if needed, though re-fetching might be better
-  // updatedBooking?: Booking | null; 
+  // updatedBooking?: Booking | null;
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false };
@@ -107,13 +107,13 @@ const HauptgastStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetail
         <div>
           <Label htmlFor="ausweisVorderseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Vorderseite)</Label>
           <div className="flex items-center gap-2">
-            <Input 
-              id="ausweisVorderseite" 
-              name="ausweisVorderseite" 
-              type="file" 
+            <Input
+              id="ausweisVorderseite"
+              name="ausweisVorderseite"
+              type="file"
               className="hidden"
               onChange={(e) => setFileNameVorderseite(e.target.files?.[0]?.name || null)}
-              accept=".jpg,.jpeg,.png,.pdf" 
+              accept=".jpg,.jpeg,.png,.pdf"
             />
             <Button asChild variant="outline" size="sm">
               <Label htmlFor="ausweisVorderseite" className="cursor-pointer">
@@ -128,10 +128,10 @@ const HauptgastStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetail
         <div>
           <Label htmlFor="ausweisRückseite" className="block mb-1 text-sm font-medium">Ausweisdokument (Rückseite)</Label>
            <div className="flex items-center gap-2">
-            <Input 
-              id="ausweisRückseite" 
-              name="ausweisRückseite" 
-              type="file" 
+            <Input
+              id="ausweisRückseite"
+              name="ausweisRückseite"
+              type="file"
               className="hidden"
               onChange={(e) => setFileNameRückseite(e.target.files?.[0]?.name || null)}
               accept=".jpg,.jpeg,.png,.pdf"
@@ -150,17 +150,17 @@ const HauptgastStep: React.FC<StepContentProps> = ({ bookingToken, bookingDetail
 
       <div>
         <Label htmlFor="specialRequests" className="flex items-center mb-1"><Info className="w-4 h-4 mr-2 text-muted-foreground" />Ihre Anmerkungen (optional)</Label>
-        <Textarea 
-            id="specialRequests" 
-            name="specialRequests" 
-            placeholder="Haben Sie spezielle Wünsche?" 
-            rows={3} 
+        <Textarea
+            id="specialRequests"
+            name="specialRequests"
+            placeholder="Haben Sie spezielle Wünsche?"
+            rows={3}
             value={specialRequestsLocal}
             onChange={(e) => setSpecialRequestsLocal(e.target.value)}
         />
         {getErrorMessage("specialRequests", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("specialRequests", formState.errors)}</p>}
       </div>
-      
+
       <div className="flex items-start space-x-3 p-4 border rounded-md bg-muted/30">
         <Checkbox id="datenschutz" name="datenschutz" defaultChecked={bookingDetails?.guestSubmittedData?.datenschutzAkzeptiert} />
         <div className="grid gap-1.5 leading-none">
@@ -220,7 +220,7 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
     }));
     // FormData will handle the actual file object by its name attribute in the input
   };
-  
+
   const formatDateDisplay = (dateString?: Date | string) => {
     if (!dateString) return "N/A";
     try {
@@ -286,9 +286,9 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
         <CardContent className="space-y-6">
           {mitreisende.map((gast, index) => (
             <div key={gast.id || index} className="p-4 border rounded-md space-y-4 relative">
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive"
                 onClick={() => handleRemoveMitreisender(index)}
                 aria-label="Mitreisenden entfernen"
@@ -300,9 +300,9 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <Label htmlFor={`mitreisende[${index}][vorname]`}>Vorname</Label>
-                  <Input 
-                    id={`mitreisende[${index}][vorname]`} 
-                    name={`mitreisende[${index}][vorname]`} 
+                  <Input
+                    id={`mitreisende[${index}][vorname]`}
+                    name={`mitreisende[${index}][vorname]`}
                     defaultValue={gast.vorname}
                     onChange={(e) => handleMitreisenderChange(index, 'vorname', e.target.value)}
                     placeholder="Max"
@@ -311,9 +311,9 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
                 </div>
                 <div>
                   <Label htmlFor={`mitreisende[${index}][nachname]`}>Nachname</Label>
-                  <Input 
-                    id={`mitreisende[${index}][nachname]`} 
-                    name={`mitreisende[${index}][nachname]`} 
+                  <Input
+                    id={`mitreisende[${index}][nachname]`}
+                    name={`mitreisende[${index}][nachname]`}
                     defaultValue={gast.nachname}
                     onChange={(e) => handleMitreisenderChange(index, 'nachname', e.target.value)}
                     placeholder="Muster"
@@ -322,10 +322,10 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
                 </div>
                 <div>
                   <Label htmlFor={`mitreisende[${index}][alter]`}>Alter</Label>
-                  <Input 
-                    id={`mitreisende[${index}][alter]`} 
-                    name={`mitreisende[${index}][alter]`} 
-                    type="number" 
+                  <Input
+                    id={`mitreisende[${index}][alter]`}
+                    name={`mitreisende[${index}][alter]`}
+                    type="number"
                     defaultValue={gast.alter?.toString()}
                     onChange={(e) => handleMitreisenderChange(index, 'alter', e.target.value)}
                     placeholder="30"
@@ -338,11 +338,11 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
                 <div>
                   <Label htmlFor={`mitreisende[${index}][ausweisVorderseite]`} className="text-xs">Vorderseite</Label>
                   <div className="flex items-center gap-2 mt-1">
-                    <Input 
-                        id={`mitreisende[${index}][ausweisVorderseite]`} 
-                        name={`mitreisende[${index}][ausweisVorderseite]`} 
-                        type="file" 
-                        className="hidden" 
+                    <Input
+                        id={`mitreisende[${index}][ausweisVorderseite]`}
+                        name={`mitreisende[${index}][ausweisVorderseite]`}
+                        type="file"
+                        className="hidden"
                         accept=".jpg,.jpeg,.png,.pdf"
                         onChange={(e) => handleFileChange(index, 'vorderseite', e.target.files?.[0] || null)}
                     />
@@ -354,11 +354,11 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
                 <div>
                   <Label htmlFor={`mitreisende[${index}][ausweisRückseite]`} className="text-xs">Rückseite</Label>
                   <div className="flex items-center gap-2 mt-1">
-                    <Input 
-                        id={`mitreisende[${index}][ausweisRückseite]`} 
-                        name={`mitreisende[${index}][ausweisRückseite]`} 
-                        type="file" 
-                        className="hidden" 
+                    <Input
+                        id={`mitreisende[${index}][ausweisRückseite]`}
+                        name={`mitreisende[${index}][ausweisRückseite]`}
+                        type="file"
+                        className="hidden"
                         accept=".jpg,.jpeg,.png,.pdf"
                         onChange={(e) => handleFileChange(index, 'rueckseite', e.target.files?.[0] || null)}
                     />
@@ -375,7 +375,7 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
           </Button>
         </CardContent>
       </Card>
-      
+
       <Button type="submit" className="w-full md:w-auto" disabled={pending}>
         {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         Weiter zu Schritt 3
@@ -421,7 +421,7 @@ const ZahlungsinfoStep: React.FC<StepContentProps> = ({ formState }) => {
 
 export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const [currentStep, setCurrentStep] = useState(0);
-  const [bookingDetails, setBookingDetails] = useState(initialBookingDetails); 
+  const [bookingDetails, setBookingDetails] = useState(initialBookingDetails);
   const [hauptgastSpecialRequests, setHauptgastSpecialRequests] = useState(initialBookingDetails?.guestSubmittedData?.specialRequests || "");
 
   console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Current Step: ${currentStep}. Initial Booking Details:`, initialBookingDetails ? {...initialBookingDetails, guestSubmittedData: !!initialBookingDetails.guestSubmittedData} : null);
@@ -432,14 +432,14 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     { id: "zahlungswahl", name: "Zahlungswahl", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungswahlStep, action: async () => ({success: true, message: "Platzhalter Zahlungswahl übersprungen"}) },
     { id: "zahlungsinfo", name: "Zahlungsinfo", Icon: ShieldQuestion, StepIcon: ShieldQuestion, Content: ZahlungsinfoStep, action: async () => ({success: true, message: "Platzhalter Zahlungsinfo übersprungen"}) },
   ], []);
-  
-  const totalDisplaySteps = 5; 
+
+  const totalDisplaySteps = 5;
   const stepperLabels = ["Hauptgast", "Mitreisende", "Zahlungswahl", "Zahlungsinfo", "Bestätigung"];
 
   // Bind bookingToken to the action
-  const boundAction = steps[currentStep]?.action 
-    ? steps[currentStep].action!.bind(null, bookingToken) 
-    : async (prevState: FormState, formData: FormData) => { 
+  const boundAction = steps[currentStep]?.action
+    ? steps[currentStep].action!.bind(null, bookingToken)
+    : async (prevState: FormState, formData: FormData) => {
         console.error("[GuestBookingFormStepper] Fehler: Aktion für den aktuellen Schritt nicht gefunden oder ungültiger Schritt.", currentStep, steps);
         return Promise.resolve({ message: "Aktion nicht definiert oder Schritt ungültig.", errors: null, success: false });
       };
@@ -462,11 +462,11 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   }, [formState, toast, currentStep, steps.length]);
 
 
-  if (!steps || currentStep < 0 ) { 
+  if (!steps || currentStep < 0 ) {
      console.error("[GuestBookingFormStepper] Invalid steps array or currentStep index.", currentStep, steps);
      return <p>Ein interner Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.</p>;
   }
-  
+
   if (formState.success && currentStep === steps.length - 1) {
     return (
       <>
@@ -489,7 +489,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
       </>
     );
   }
-  
+
   if (currentStep >= steps.length && !(formState.success && currentStep === steps.length -1)) {
      console.warn("[GuestBookingFormStepper] currentStep is out of bounds. Current step:", currentStep, "Steps length:", steps.length);
     return (
@@ -511,7 +511,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   }
 
   const ActiveStepContent = steps[currentStep].Content;
-  const CurrentStepIconComponent = steps[currentStep].Icon; // Alias for the Icon component
+  const CurrentStepIconComponent = steps[currentStep].Icon; // Assign to an uppercase variable
   const stepNumberForDisplay = currentStep + 1;
 
   return (
@@ -520,7 +520,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <PradellLogo className="mb-8" />
         <CardTitle className="text-3xl font-bold text-center mb-2">Buchung vervollständigen</CardTitle>
         <p className="text-center text-muted-foreground mb-10">Schritt {stepNumberForDisplay} von {totalDisplaySteps} - {stepperLabels[currentStep]}</p>
-        
+
         <div className="mb-12">
           <ol className="flex items-center w-full">
             {stepperLabels.map((label, index) => (
@@ -538,8 +538,8 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                 )}>
                   <span className={cn(
                       "flex items-center justify-center w-8 h-8 rounded-full text-sm shrink-0 mb-1 lg:w-10 lg:h-10",
-                      index < currentStep ? "bg-primary text-primary-foreground" : 
-                      index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" : 
+                      index < currentStep ? "bg-primary text-primary-foreground" :
+                      index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" :
                       "bg-muted text-muted-foreground border"
                   )}>
                     {index < currentStep ? <Check className="w-5 h-5" /> : index + 1}
@@ -565,10 +565,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
           </CardHeader>
           <CardContent className="pt-6">
             <form action={formAction}>
-              <ActiveStepContent 
-                bookingToken={bookingToken} 
-                bookingDetails={bookingDetails} 
-                formState={formState} 
+              <ActiveStepContent
+                bookingToken={bookingToken}
+                bookingDetails={bookingDetails}
+                formState={formState}
                 hauptgastSpecialRequests={hauptgastSpecialRequests}
                 setHauptgastSpecialRequests={setHauptgastSpecialRequests}
               />
