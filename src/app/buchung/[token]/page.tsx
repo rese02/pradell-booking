@@ -3,32 +3,42 @@ import { GuestBookingFormStepper } from "@/components/guest/GuestBookingFormStep
 import type { Booking } from "@/lib/definitions";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; // Import centralized mock data
+import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; 
 import { notFound } from "next/navigation";
+
+// Log module evaluation time and initial state of MOCK_BOOKINGS_DB
+console.log(`[Module /buchung/[token]/page.tsx] Module evaluated. MOCK_BOOKINGS_DB length at module load: ${MOCK_BOOKINGS_DB.length}`);
+console.log(`[Module /buchung/[token]/page.tsx] Tokens at module load:`, MOCK_BOOKINGS_DB.map(b => b.bookingToken).join(', '));
 
 // Mock data fetching function - replace with actual data fetching from your backend/Firebase
 async function getBookingByToken(token: string): Promise<Booking | null> {
-  console.log(`[Server] Attempting to fetch booking for token: ${token}`);
+  console.log(`[getBookingByToken] Attempting to fetch booking for token: "${token}"`);
+  // Log the current state of MOCK_BOOKINGS_DB that this function sees
+  console.log(`[getBookingByToken] Current MOCK_BOOKINGS_DB length: ${MOCK_BOOKINGS_DB.length}`);
+  const availableTokens = MOCK_BOOKINGS_DB.map(b => b.bookingToken);
+  console.log(`[getBookingByToken] Available tokens in MOCK_BOOKINGS_DB: [${availableTokens.join(', ')}]`);
+  
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 100));
 
   const booking = MOCK_BOOKINGS_DB.find(b => b.bookingToken === token);
 
   if (booking) {
-    console.log(`[Server] Found booking for token ${token}:`, booking.status, booking);
+    console.log(`[getBookingByToken] Found booking for token "${token}". Status: ${booking.status}`);
     return booking;
   } else {
-    console.log(`[Server] No booking found for token ${token}`);
+    console.warn(`[getBookingByToken] No booking found for token "${token}".`);
     return null;
   }
 }
 
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
+  console.log(`[GuestBookingPage] Rendering page for token: "${params.token}"`);
   const booking = await getBookingByToken(params.token);
 
   if (!booking) {
-    // Instead of custom message, use Next.js notFound to render 404 page
+    console.error(`[GuestBookingPage] Booking not found for token "${params.token}", calling notFound().`);
     notFound();
   }
   
@@ -41,7 +51,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
           <CardTitle className="text-xl">Ihre Daten wurden bereits übermittelt</CardTitle>
         </CardHeader>
         <CardContent className="text-center">
-            <CardDescription> {/* Use CardDescription for consistency */}
+            <CardDescription>
             Vielen Dank, {booking.guestFirstName}. Ihre Buchungsdaten für {booking.roomIdentifier || 'Ihr Zimmer'} wurden bereits erfolgreich übermittelt und bestätigt.
             </CardDescription>
             <p className="mt-4 text-sm text-muted-foreground">Bei Fragen wenden Sie sich bitte direkt an das Hotel.</p>
@@ -74,6 +84,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   // Fallback for other statuses or unexpected scenarios
+  console.warn(`[GuestBookingPage] Booking found for token "${params.token}", but status is "${booking.status}", which is not handled by specific UI. Displaying generic status message.`);
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg">
         <CardHeader className="items-center text-center">
