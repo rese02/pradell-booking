@@ -1,3 +1,4 @@
+
 import { BookingsDataTable } from "@/components/admin/BookingsDataTable";
 import { CreateBookingDialog } from "@/components/admin/CreateBookingDialog";
 import type { Booking } from "@/lib/definitions";
@@ -5,52 +6,42 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-// Mock data - in a real app, this would come from a database
-const MOCK_BOOKINGS: Booking[] = [
-  { 
-    id: '1', 
-    guestFirstName: 'Max', 
-    guestLastName: 'Mustermann', 
-    price: 150.75, 
-    roomIdentifier: '101', 
-    checkInDate: new Date('2024-09-15').toISOString(),
-    checkOutDate: new Date('2024-09-20').toISOString(),
-    bookingToken: 'abc123xyz', 
-    status: 'Pending Guest Information', 
-    createdAt: new Date().toISOString(), 
-    updatedAt: new Date().toISOString() 
-  },
-  { 
-    id: '2', 
-    guestFirstName: 'Erika', 
-    guestLastName: 'Musterfrau', 
-    price: 200, 
-    roomIdentifier: 'Suite 205', 
-    checkInDate: new Date('2024-10-01').toISOString(),
-    checkOutDate: new Date('2024-10-05').toISOString(),
-    bookingToken: 'def456uvw', 
-    status: 'Confirmed', 
-    createdAt: new Date().toISOString(), 
-    updatedAt: new Date().toISOString(),
-    guestSubmittedData: { fullName: "Erika Musterfrau", email: "erika@example.com", phone: "0123456789"}
-  },
-];
+import { MOCK_BOOKINGS_DB } from "@/lib/mock-db"; // Import centralized mock data
 
 // This function would fetch data in a real app
 async function getBookings(): Promise<Booking[]> {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 100));
-  return MOCK_BOOKINGS;
+  // Return the potentially mutated MOCK_BOOKINGS_DB
+  // Sort by creation date, newest first, for better UX when adding new ones
+  return [...MOCK_BOOKINGS_DB].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 async function getDashboardStats() {
-  // Simulate API delay and data fetching
+  // Simulate API delay and data fetching for stats
   await new Promise(resolve => setTimeout(resolve, 100));
+  const today = new Date().setHours(0,0,0,0);
+  const bookings = await getBookings(); // Use the same source
+
+  const arrivalsToday = bookings.filter(b => {
+    const checkIn = new Date(b.checkInDate!).setHours(0,0,0,0);
+    return checkIn === today && (b.status === "Confirmed" || b.status === "Pending Guest Information");
+  }).length;
+
+  const departuresToday = bookings.filter(b => {
+    const checkOut = new Date(b.checkOutDate!).setHours(0,0,0,0);
+    return checkOut === today && b.status === "Confirmed";
+  }).length;
+  
+  const newBookingsToday = bookings.filter(b => {
+    const createdAt = new Date(b.createdAt).setHours(0,0,0,0);
+    return createdAt === today;
+  }).length;
+
   return {
-    arrivalsToday: 0,
-    departuresToday: 0,
-    newBookingsToday: 0,
+    arrivalsToday,
+    departuresToday,
+    newBookingsToday,
   };
 }
 
@@ -127,7 +118,7 @@ export default async function AdminDashboardPage() {
           />
           <StatCard
             title="Neue Buchungen heute"
-            value={`+${stats.newBookingsToday}`}
+            value={`${stats.newBookingsToday > 0 ? '+' : ''}${stats.newBookingsToday}`}
             icon={NewBookingIcon}
             description="Heute erstellte Buchungen"
             tooltipText="Anzahl der Buchungen, die heute neu erstellt wurden."
@@ -142,8 +133,6 @@ export default async function AdminDashboardPage() {
                 Details ansehen und Buchungen verwalten.
               </CardDescription>
             </div>
-            {/* Placeholder for the "Buchungen ausrichten" button from BookingsDataTable's filter options */}
-            {/* The actual filter button is inside BookingsDataTable */}
           </CardHeader>
           <CardContent>
             {bookings.length > 0 ? (
