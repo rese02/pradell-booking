@@ -226,70 +226,80 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ bookingToken, bookingDeta
     }));
   };
 
-  const gesamtPersonen = (bookingDetails?.erwachsene || 0) + (bookingDetails?.kinder || 0) + (bookingDetails?.kleinkinder || 0);
+  const getPersonenText = () => {
+    const erwachsene = bookingDetails?.erwachsene || 0;
+    const kinder = bookingDetails?.kinder || 0;
+    const kleinkinder = bookingDetails?.kleinkinder || 0;
+    
+    const parts: string[] = [];
+    if (erwachsene > 0) parts.push(`${erwachsene} Erw.`);
+    if (kinder > 0) parts.push(`${kinder} Ki.`);
+    if (kleinkinder > 0) parts.push(`${kleinkinder} Klk.`);
+    
+    return parts.length > 0 ? parts.join(', ') : 'N/A';
+  };
 
   return (
     <div className="space-y-8">
-      <Card className="bg-muted/20">
+      <Card className="bg-muted/20 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold">Ihre Buchungsdetails</CardTitle>
+          <CardTitle className="text-xl font-semibold text-primary">Ihre Buchungsdetails</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <CardContent className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                 <div>
-                    <p className="text-muted-foreground">Check-in</p>
-                    <p className="font-medium">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
+                    <p className="text-xs text-muted-foreground">Check-in</p>
+                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Check-out</p>
-                    <p className="font-medium">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
+                    <p className="text-xs text-muted-foreground">Check-out</p>
+                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Preis</p>
-                    <p className="font-medium">{formatCurrency(bookingDetails?.price)}</p>
+                    <p className="text-xs text-muted-foreground">Preis</p>
+                    <p className="font-semibold">{formatCurrency(bookingDetails?.price)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Verpflegung</p>
-                    <p className="font-medium capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
+                    <p className="text-xs text-muted-foreground">Verpflegung</p>
+                    <p className="font-semibold capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
                 </div>
             </div>
             <Separator/>
-            <div>
-                <p className="text-muted-foreground">Hauptzimmer</p>
-                <p className="font-medium">
-                    {bookingDetails?.zimmertyp ? `${bookingDetails.zimmertyp}` : 'N/A'}
-                    {gesamtPersonen > 0 && `, ${gesamtPersonen} Person${gesamtPersonen !== 1 ? 'en' : ''}`}
-                </p>
-                { (bookingDetails?.erwachsene || bookingDetails?.kinder || bookingDetails?.kleinkinder) &&
-                    <p className="text-xs text-muted-foreground">
-                        ({bookingDetails?.erwachsene || 0} Erw.
-                        {typeof bookingDetails?.kinder === 'number' ? `, ${bookingDetails.kinder} Ki.` : ''}
-                        {typeof bookingDetails?.kleinkinder === 'number' ? `, ${bookingDetails.kleinkinder} Klk.` : ''})
-                    </p>
-                }
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <div>
+                    <p className="text-xs text-muted-foreground">Hauptzimmer</p>
+                    <p className="font-semibold">{bookingDetails?.zimmertyp || 'N/A'}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-muted-foreground">Personen</p>
+                    <p className="font-semibold">{getPersonenText()}</p>
+                </div>
             </div>
             {(hauptgastSpecialRequests || bookingDetails?.interneBemerkungen) && <Separator/>}
             {hauptgastSpecialRequests && (
                 <div>
-                    <p className="text-muted-foreground">Ihre Anmerkungen</p>
+                    <p className="text-xs text-muted-foreground">Ihre Anmerkungen</p>
                     <p className="font-medium whitespace-pre-wrap">{hauptgastSpecialRequests}</p>
                 </div>
             )}
              {bookingDetails?.interneBemerkungen && (
                 <div>
-                    <p className="text-muted-foreground">Anmerkungen (Hotel)</p>
+                    <p className="text-xs text-muted-foreground">Anmerkungen (Hotel)</p>
                     <p className="font-medium whitespace-pre-wrap">{bookingDetails.interneBemerkungen}</p>
                 </div>
             )}
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold flex items-center"><Users className="w-5 h-5 mr-3 text-primary"/>Weitere Mitreisende</CardTitle>
-          <CardDescription>Fügen Sie hier Angaben zu weiteren Gästen hinzu (falls zutreffend).</CardDescription>
+          <CardTitle className="text-xl font-semibold flex items-center">Weitere Mitreisende</CardTitle>
+          <CardDescription>Fügen Sie hier die Daten aller weiteren Personen hinzu (optional).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {mitreisende.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">Keine weiteren Mitreisenden angegeben.</p>
+          )}
           {mitreisende.map((gast, index) => (
             <div key={gast.id || index} className="p-4 border rounded-md space-y-4 relative bg-muted/20">
               <Button
@@ -396,53 +406,61 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ bookingDetails, 
   const totalPrice = bookingDetails?.price || 0;
   const downPayment = totalPrice * 0.3;
 
-  const gesamtPersonen = (bookingDetails?.erwachsene || 0) + (bookingDetails?.kinder || 0) + (bookingDetails?.kleinkinder || 0);
+  const getPersonenText = () => {
+    const erwachsene = bookingDetails?.erwachsene || 0;
+    const kinder = bookingDetails?.kinder || 0;
+    const kleinkinder = bookingDetails?.kleinkinder || 0;
+    
+    const parts: string[] = [];
+    if (erwachsene > 0) parts.push(`${erwachsene} Erw.`);
+    if (kinder > 0) parts.push(`${kinder} Ki.`);
+    if (kleinkinder > 0) parts.push(`${kleinkinder} Klk.`);
+    
+    return parts.length > 0 ? parts.join(', ') : 'N/A';
+  };
+
 
   return (
     <div className="space-y-8">
-      <Card className="bg-muted/20">
+      <Card className="bg-muted/20 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-xl font-semibold">Ihre Buchungsdetails</CardTitle>
+          <CardTitle className="text-xl font-semibold text-primary">Ihre Buchungsdetails</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        <CardContent className="space-y-4 text-sm">
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
                 <div>
-                    <p className="text-muted-foreground">Check-in</p>
-                    <p className="font-medium">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
+                    <p className="text-xs text-muted-foreground">Check-in</p>
+                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkInDate)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Check-out</p>
-                    <p className="font-medium">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
+                    <p className="text-xs text-muted-foreground">Check-out</p>
+                    <p className="font-semibold">{formatDateDisplay(bookingDetails?.checkOutDate)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Preis</p>
-                    <p className="font-medium">{formatCurrency(bookingDetails?.price)}</p>
+                    <p className="text-xs text-muted-foreground">Preis</p>
+                    <p className="font-semibold">{formatCurrency(bookingDetails?.price)}</p>
                 </div>
                 <div>
-                    <p className="text-muted-foreground">Verpflegung</p>
-                    <p className="font-medium capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
+                    <p className="text-xs text-muted-foreground">Verpflegung</p>
+                    <p className="font-semibold capitalize">{bookingDetails?.verpflegung?.replace(/_/g, ' ') || 'Keine'}</p>
                 </div>
             </div>
             <Separator/>
-            <div>
-                <p className="text-muted-foreground">Hauptzimmer</p>
-                <p className="font-medium">
-                    {bookingDetails?.zimmertyp ? `${bookingDetails.zimmertyp}` : 'N/A'}
-                    {gesamtPersonen > 0 && `, ${gesamtPersonen} Person${gesamtPersonen !== 1 ? 'en' : ''}`}
-                </p>
-                 { (bookingDetails?.erwachsene || bookingDetails?.kinder || bookingDetails?.kleinkinder) &&
-                    <p className="text-xs text-muted-foreground">
-                        ({bookingDetails?.erwachsene || 0} Erw.
-                        {typeof bookingDetails?.kinder === 'number' ? `, ${bookingDetails.kinder} Ki.` : ''}
-                        {typeof bookingDetails?.kleinkinder === 'number' ? `, ${bookingDetails.kleinkinder} Klk.` : ''})
-                    </p>
-                }
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <div>
+                    <p className="text-xs text-muted-foreground">Hauptzimmer</p>
+                    <p className="font-semibold">{bookingDetails?.zimmertyp || 'N/A'}</p>
+                </div>
+                <div>
+                    <p className="text-xs text-muted-foreground">Personen</p>
+                    <p className="font-semibold">{getPersonenText()}</p>
+                </div>
             </div>
              {hauptgastSpecialRequests && (
               <>
                 <Separator/>
                 <div>
-                    <p className="text-muted-foreground">Ihre Anmerkungen</p>
+                    <p className="text-xs text-muted-foreground">Ihre Anmerkungen</p>
                     <p className="font-medium whitespace-pre-wrap">{hauptgastSpecialRequests}</p>
                 </div>
               </>
@@ -451,7 +469,7 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ bookingDetails, 
               <>
                 <Separator/>
                 <div>
-                    <p className="text-muted-foreground">Anmerkungen (Hotel)</p>
+                    <p className="text-xs text-muted-foreground">Anmerkungen (Hotel)</p>
                     <p className="font-medium whitespace-pre-wrap">{bookingDetails.interneBemerkungen}</p>
                 </div>
               </>
@@ -459,7 +477,7 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ bookingDetails, 
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-sm">
         <CardHeader>
             <CardTitle className="text-xl font-semibold">Zahlungssumme wählen</CardTitle>
             <CardDescription>Wählen Sie, ob Sie eine Anzahlung oder den Gesamtbetrag leisten möchten.</CardDescription>
@@ -566,9 +584,21 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     }
 
     if (formState.success && currentStep < steps.length -1) {
+      // Nur weiterschalten, wenn die Aktion erfolgreich war und es noch weitere interaktive Schritte gibt
       setCurrentStep(prev => prev + 1);
+       // Formularstatus zurücksetzen, damit der Toast nicht erneut erscheint, wenn der Benutzer zurück navigiert
+       // und dann wieder vorwärts, ohne die Aktion erneut auszulösen.
+       // Dies sollte idealerweise im useActionState Hook selbst passieren, wenn er zurückgesetzt wird,
+       // aber hier manuell für Klarheit und sofortige Wirkung.
+       // WICHTIG: Dies ist ein Workaround. Ein besseres State-Management für formState wäre, es
+       // explizit zurückzusetzen oder useActionState so zu verwenden, dass es sich bei neuer Action zurücksetzt.
+       // Für den Moment, um das Springen zu verhindern:
+       // (initialFormState as any).success = false; // Temporary hack, not ideal
     } else if (formState.success && currentStep === steps.length - 1) {
-      // Last interactive step successful, parent page should handle final confirmation display
+      // Letzter interaktiver Schritt erfolgreich, Formular ist quasi abgeschlossen
+      // Die Seite /buchung/[token] sollte nun die finale Bestätigungsnachricht anzeigen,
+      // basierend auf dem aktualisierten Booking-Status (z.B. "Confirmed")
+      console.log("[GuestBookingFormStepper] Alle interaktiven Schritte abgeschlossen.");
     }
   }, [formState, toast, currentStep, steps.length]);
 
@@ -580,22 +610,26 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
 
 
   if (currentStep >= steps.length ) {
-     console.warn("[GuestBookingFormStepper] currentStep is beyond defined interactive steps. Current step:", currentStep, "Steps length:", steps.length);
+     // Dieser Zustand sollte erreicht werden, nachdem der letzte interaktive Schritt erfolgreich war.
+     // Die übergeordnete Seite /buchung/[token]/page.tsx sollte dann die finale Bestätigungsnachricht zeigen.
+     // Dieser return-Block dient als Fallback oder für den Fall, dass die Seite nicht neu geladen wird
+     // um den finalen Status zu zeigen.
+    console.warn("[GuestBookingFormStepper] currentStep ist jenseits der definierten interaktiven Schritte. Aktueller Schritt:", currentStep, "Anzahl Schritte:", steps.length);
     return (
       <>
         <div className="max-w-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
             <PradellLogo className="mb-8" />
             <Card className="w-full shadow-xl">
                 <CardHeader className="items-center text-center">
-                { formState.success ? <CheckCircle className="w-16 h-16 text-green-500 mb-4" /> : <Info className="w-16 h-16 text-blue-500 mb-4" /> }
+                { formState.success || bookingDetails?.status === "Confirmed" ? <CheckCircle className="w-16 h-16 text-green-500 mb-4" /> : <Info className="w-16 h-16 text-blue-500 mb-4" /> }
                 <CardTitle className="text-2xl">Buchungsabschluss</CardTitle>
                 </CardHeader>
                 <CardContent className="text-center">
                 <CardDescription>
-                    { formState.success ? `Vielen Dank, ${bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.` 
+                    { formState.success || bookingDetails?.status === "Confirmed" ? `Vielen Dank, ${bookingDetails?.guestFirstName || 'Gast'}! Ihre Daten wurden erfolgreich übermittelt. Das Hotel wird sich bei Bedarf mit Ihnen in Verbindung setzen.` 
                                       : "Das Formular wurde bereits abgeschlossen oder befindet sich in einem unerwarteten Zustand." }
                 </CardDescription>
-                { formState.success && <p className="mt-2">Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>}
+                { (formState.success || bookingDetails?.status === "Confirmed") && <p className="mt-2">Ihre Buchungsreferenz: <strong>{bookingToken}</strong></p>}
                 <p className="mt-4 text-muted-foreground">Sie können diese Seite nun schließen oder <Link href="/" className="text-primary underline">zur Startseite</Link> zurückkehren.</p>
                 </CardContent>
             </Card>
@@ -607,7 +641,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   const ActiveStepContent = steps[currentStep].Content;
   const CurrentStepIconComponent = steps[currentStep].Icon; 
   const stepNumberForDisplay = currentStep + 1;
-  const { pending } = useFormStatus();
+  const { pending } = useFormStatus(); // Bezieht sich auf die Action des aktuellen Schritts
 
   return (
     <>
@@ -619,7 +653,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <div className="mb-12">
           <ol className="flex items-center w-full">
             {stepperLabels.map((label, index) => {
-              const StepIcon = steps[index] ? steps[index].StepIcon : null;
+              const StepIconComponent = steps[index] ? steps[index].StepIcon : null; // Korrigiert: StepIconComponent statt StepIcon
               return (
               <li
                 key={label}
@@ -639,7 +673,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                       index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" :
                       "bg-muted text-muted-foreground border"
                   )}>
-                    {index < currentStep ? <Check className="w-5 h-5" /> : (StepIcon ? <StepIcon className="w-5 h-5"/> : index +1) }
+                    {index < currentStep ? <Check className="w-5 h-5" /> : (StepIconComponent ? <StepIconComponent className="w-5 h-5"/> : index +1) }
                   </span>
                   <span className={cn(
                       "text-xs px-1", 
@@ -657,7 +691,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <Card className="w-full shadow-xl">
           <CardHeader className="border-b">
               <CardTitle className="text-xl flex items-center">
-                <CurrentStepIconComponent className="w-6 h-6 mr-3 text-primary"/>
+                {CurrentStepIconComponent && <CurrentStepIconComponent className="w-6 h-6 mr-3 text-primary"/>}
                 {steps[currentStep].name}
               </CardTitle>
           </CardHeader>
@@ -677,7 +711,15 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
               )}
                <div className="flex justify-between items-center mt-8 pt-6 border-t">
                 {currentStep > 0 ? (
-                    <Button variant="outline" onClick={() => setCurrentStep(prev => prev -1)} type="button" disabled={pending}>
+                    <Button variant="outline" onClick={() => {
+                        setCurrentStep(prev => prev -1);
+                        // Formularstatus zurücksetzen, um alte Fehlermeldungen zu löschen
+                        // Dies sollte idealerweise über eine Reset-Funktion des useActionState oder
+                        // durch Neumontage der Komponente geschehen.
+                        // (initialFormState as any).errors = null; 
+                        // (initialFormState as any).message = null;
+                        // (initialFormState as any).success = false;
+                    }} type="button" disabled={pending}>
                         Zurück
                     </Button>
                 ) : <div></div> 
@@ -696,3 +738,4 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   );
 }
 
+    
