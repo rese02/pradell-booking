@@ -1,3 +1,4 @@
+
 // src/lib/firebase.ts
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
@@ -59,7 +60,6 @@ if (typeof window === 'undefined') {
     console.log(`[Firebase Env Check] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': Not set or empty (Optional)`);
   }
   
-  // Log the exact configuration object that will be passed to initializeApp
   console.log("--- Firebase Config Object to be used for initialization ---");
   console.log(JSON.stringify(firebaseConfigValues, null, 2));
   console.log("--- ---");
@@ -105,15 +105,15 @@ if (typeof window === 'undefined') {
         storage = null; 
       }
 
-      if (app && db && storage) { 
+      if (app && dbInitSuccess && storageInitSuccess) { // Check specific success flags
         firebaseInitializedCorrectly = true;
         console.log("[Firebase Init OK] Firebase Core, Firestore, and Storage ALL INITIALIZED AND CONFIGURED CORRECTLY.");
       } else {
         firebaseInitializedCorrectly = false;
         let reasons = [];
         if (!app) reasons.push("Firebase App (app) not initialized");
-        if (!db) reasons.push("Firestore (db) not initialized");
-        if (!storage) reasons.push("Firebase Storage not initialized");
+        if (!dbInitSuccess) reasons.push("Firestore (db) not initialized"); // Use success flag
+        if (!storageInitSuccess) reasons.push("Firebase Storage not initialized"); // Use success flag
         console.error(`[Firebase Init FAIL] One or more Firebase services failed to initialize. Reason(s): ${reasons.join('; ')}. 'firebaseInitializedCorrectly' is FALSE.`);
       }
     } else { 
@@ -129,14 +129,22 @@ if (typeof window === 'undefined') {
   console.log("============================================================");
 } else {
   // Client-side re-check (less critical but good for consistency if module is somehow re-evaluated on client)
-  if (getApps().length > 0 && !app) { 
-    app = getApps()[0];
-    if (app && !db) db = getFirestore(app);
-    if (app && !storage) storage = getStorage(app);
-    if (app && db && storage && !firebaseInitializedCorrectly) { // only set if it wasn't set by server
-        // firebaseInitializedCorrectly = true; // Avoid setting this on client if server failed.
-        // console.log("[Firebase Init Client] Using existing Firebase app from client-side evaluation.");
-    }
+  // This logic might need to be more robust if server-side init can fail and client needs to pick up.
+  // For now, primary initialization responsibility is server-side during startup.
+  if (getApps().length > 0) {
+      if (!app) app = getApps()[0];
+      if (app && !db) {
+          try {
+              db = getFirestore(app);
+          } catch (e) { /* ignore client-side re-init errors if server failed */ }
+      }
+      if (app && !storage) {
+          try {
+              storage = getStorage(app);
+          } catch (e) { /* ignore client-side re-init errors if server failed */ }
+      }
+      // firebaseInitializedCorrectly is primarily set by server-side logic.
+      // Avoid client-side logic changing this flag if server-side init already determined it.
   }
 }
 
