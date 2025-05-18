@@ -38,7 +38,7 @@ const createBookingSchema = z.object({
 });
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"]; // Removed GIF for simplicity with Data URI
 const ACCEPTED_PDF_TYPES = ["application/pdf"];
 const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_PDF_TYPES];
 
@@ -94,9 +94,9 @@ export type FormState = {
   message?: string | null;
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
-  actionToken?: string; // Unique token for this specific action invocation
+  actionToken?: string; 
   updatedGuestData?: GuestSubmittedData | null;
-  currentStep?: number; // To help UI stay on the current step in case of error
+  currentStep?: number; 
 };
 
 function generateActionToken() {
@@ -153,7 +153,6 @@ async function updateBookingStep(
   let rawFormData: Record<string, any>;
   try {
     rawFormData = Object.fromEntries(formData.entries());
-    logFormDataMinimal(`[Action updateBookingStep - Step ${stepNumber}] Raw FormData Received`, bookingToken, rawFormData);
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
     console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error converting FormData for token "${bookingToken}":`, err.message, err.stack?.substring(0,500));
@@ -186,7 +185,7 @@ async function updateBookingStep(
   }
   
   const dataFromForm = validatedFields.data;
-  console.log(`[Action updateBookingStep - Step ${stepNumber}] Zod validation successful for token "${bookingToken}". Validated data (potentially truncated):`, JSON.stringify(dataFromForm, stringifyReplacer, 2).substring(0, 500) + "...");
+  console.log(`[Action updateBookingStep - Step ${stepNumber}] Zod validation successful for token "${bookingToken}". Validated data (first 500 chars):`, JSON.stringify(dataFromForm, stringifyReplacer, 2).substring(0, 500) + "...");
   
   const fileFieldsToLog: Record<string, any> = {};
   const fileFieldsDefinition: { formDataKey: keyof typeof dataFromForm; urlKey: keyof GuestSubmittedData }[] = [
@@ -201,7 +200,7 @@ async function updateBookingStep(
       fileFieldsToLog[String(fieldDef.formDataKey)] = { name: file.name, size: file.size, type: file.type };
     }
   });
-  if(Object.keys(fileFieldsToLog).length > 0) console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated File objects:`, JSON.stringify(fileFieldsToLog));
+  if(Object.keys(fileFieldsToLog).length > 0) console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated File objects from Zod:`, JSON.stringify(fileFieldsToLog));
 
 
   let booking: Booking | undefined;
@@ -229,8 +228,6 @@ async function updateBookingStep(
     ...(additionalDataToMerge || {}),
     ...dataFromForm,
   };
-  console.log(`[Action updateBookingStep - Step ${stepNumber}] Guest data PRE-FILE-PROCESSING for token "${bookingToken}" (partial): ${JSON.stringify(updatedGuestData, stringifyReplacer, 2).substring(0, 500)}...`);
-
 
   for (const field of fileFieldsDefinition) {
     const file = dataFromForm[field.formDataKey as keyof typeof dataFromForm] as File | undefined | null;
@@ -238,39 +235,50 @@ async function updateBookingStep(
 
     try {
       if (file instanceof File && file.size > 0) {
-        // File was validated by Zod. Store mock URL.
-        const fileUrl = `mock-file-url:${encodeURIComponent(file.name)}`;
-        (updatedGuestData as any)[field.urlKey] = fileUrl;
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] Stored MOCK URL for ${file.name}: ${fileUrl} into key ${String(field.urlKey)} for token "${bookingToken}"`);
+        // WARNING: Converting images to Data URIs can be resource-intensive and lead to server overload
+        // for large files or multiple uploads. This is a mock implementation for development.
+        // For production, upload directly to cloud storage (e.g., Firebase Storage).
+        if (ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] Converting image ${file.name} (size: ${file.size}, type: ${file.type}) to Data URI for token "${bookingToken}"`);
+          const arrayBuffer = await file.arrayBuffer();
+          const base64 = Buffer.from(arrayBuffer).toString('base64');
+          (updatedGuestData as any)[field.urlKey] = `data:${file.type};base64,${base64}`;
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] Image ${file.name} converted to Data URI (length: ${ (updatedGuestData as any)[field.urlKey].length }) for token "${bookingToken}"`);
+        } else if (ACCEPTED_PDF_TYPES.includes(file.type)) {
+          (updatedGuestData as any)[field.urlKey] = `mock-file-url:${encodeURIComponent(file.name)}`;
+           console.log(`[Action updateBookingStep - Step ${stepNumber}] Stored MOCK PDF URL for ${file.name}: ${(updatedGuestData as any)[field.urlKey]} into key ${String(field.urlKey)} for token "${bookingToken}"`);
+        } else {
+          // This case should ideally be caught by Zod validation earlier
+          console.warn(`[Action updateBookingStep - Step ${stepNumber}] Unsupported file type ${file.type} for ${file.name} encountered for token "${bookingToken}". Storing as generic mock file.`);
+          (updatedGuestData as any)[field.urlKey] = `mock-file-url:UNSUPPORTED_${encodeURIComponent(file.name)}`;
+        }
       } else if ((currentGuestDataSnapshot as any)?.[field.urlKey]) {
+        // No new file provided, keep the existing URL if there is one
         (updatedGuestData as any)[field.urlKey] = (currentGuestDataSnapshot as any)[field.urlKey];
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(field.formDataKey)}, kept old MOCK URL: ${(updatedGuestData as any)[field.urlKey]?.substring(0,80)}... for token "${bookingToken}"`);
+        console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(field.formDataKey)}, kept old URL: ${(updatedGuestData as any)[field.urlKey]?.substring(0,80)}... for token "${bookingToken}"`);
       } else {
+        // No new file and no old file URL, so ensure the key is not present or is null
         delete (updatedGuestData as any)[field.urlKey];
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old MOCK URL for ${String(field.formDataKey)}. Deleted key ${String(field.urlKey)} for token "${bookingToken}".`);
+         console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old URL for ${String(field.formDataKey)}. Deleted key ${String(field.urlKey)} for token "${bookingToken}".`);
       }
-    } catch (fileProcessingError) {
-      const err = fileProcessingError instanceof Error ? fileProcessingError : new Error(String(fileProcessingError));
-      console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during MOCK file processing for ${String(field.formDataKey)} (Token "${bookingToken}"):`, err.message, err.stack?.substring(0, 500));
+    } catch (fileProcessingError: any) {
+      console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during file processing for ${String(field.formDataKey)} (Token "${bookingToken}"):`, fileProcessingError.message, fileProcessingError.stack?.substring(0, 500));
       return {
-        message: `Serverfehler: Dateiverarbeitung für ${String(field.formDataKey)} fehlgeschlagen (Code UDB-FILEPROC): ${err.message}.`,
-        errors: { [String(field.formDataKey)]: [err.message] },
+        message: `Serverfehler: Dateiverarbeitung für ${String(field.formDataKey)} fehlgeschlagen (Code UDB-FILEPROC): ${fileProcessingError.message}.`,
+        errors: { [String(field.formDataKey)]: [fileProcessingError.message] },
         success: false, actionToken: currentActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
       };
     }
   }
   
-  updatedGuestData.lastCompletedStep = Math.max(updatedGuestData.lastCompletedStep ?? -1, stepNumber - 1); // 0-indexed
+  updatedGuestData.lastCompletedStep = Math.max(updatedGuestData.lastCompletedStep ?? -1, stepNumber - 1); 
   console.log(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data POST-FILE-PROCESSING for token "${bookingToken}". New lastCompletedStep: ${updatedGuestData.lastCompletedStep}.`);
-  console.log(`[Action updateBookingStep - Step ${stepNumber}] Full updatedGuestData for save (partial): ${JSON.stringify(updatedGuestData, stringifyReplacer, 2).substring(0, 800)}...`);
-
-
+  
   if (stepNumber === 4) { // Endgültige Bestätigung (Schritt 4 ist der letzte interaktive Schritt)
     if (updatedGuestData.agbAkzeptiert === true && updatedGuestData.datenschutzAkzeptiert === true) {
       updatedGuestData.submittedAt = new Date().toISOString();
       console.log(`[Action updateBookingStep - Step ${stepNumber}] AGB & Datenschutz akzeptiert. SubmittedAt gesetzt für Token "${bookingToken}".`);
     } else {
-      // This should be caught by Zod, but as a safeguard:
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] AGB und/oder Datenschutz NICHT akzeptiert für Token "${bookingToken}". SubmittedAt NICHT gesetzt.`);
        return {
         message: "AGB und/oder Datenschutz wurden nicht akzeptiert.",
@@ -300,11 +308,10 @@ async function updateBookingStep(
   
   let updateSuccess = false;
   try {
-    console.log(`[Action updateBookingStep - Step ${stepNumber}] Attempting to update mock DB for token "${bookingToken}"`);
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Attempting to update mock DB for token "${bookingToken}" with data (first 800 chars): ${JSON.stringify(bookingUpdates, stringifyReplacer, 2).substring(0, 800)}...`);
     updateSuccess = updateMockBookingByToken(bookingToken, bookingUpdates);
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during updateMockBookingByToken for token "${bookingToken}":`, err.message, err.stack?.substring(0,500));
+  } catch (e: any) {
+    console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during updateMockBookingByToken for token "${bookingToken}":`, e.message, e.stack?.substring(0,500));
     return {
       message: `Serverfehler: Buchung konnte nicht gespeichert werden (Code UDB-DBSAVE) für Schritt ${stepNumber}.`,
       errors: {global: ["Fehler beim Speichern der Buchung."]}, success: false, actionToken: currentActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
@@ -313,14 +320,14 @@ async function updateBookingStep(
 
   if (updateSuccess) {
     console.log(`[Action updateBookingStep - Step ${stepNumber}] Data submitted successfully for token: "${bookingToken}". Booking status: ${bookingUpdates.status || booking?.status}. LastCompletedStep: ${updatedGuestData.lastCompletedStep}.`);
-    revalidatePath(`/buchung/${bookingToken}`, "layout"); // Revalidate the booking page itself
-    if (booking?.id) revalidatePath(`/admin/bookings/${booking.id}`, "page"); // Revalidate admin detail page
+    revalidatePath(`/buchung/${bookingToken}`, "layout"); 
+    if (booking?.id) revalidatePath(`/admin/bookings/${booking.id}`, "page"); 
 
     let message = `Schritt ${stepNumber} erfolgreich übermittelt.`;
     if (bookingUpdates.status === "Confirmed") {
       message = "Buchung erfolgreich abgeschlossen und bestätigt!";
     }
-    console.log(`[Action updateBookingStep - Step ${stepNumber}] ENDING successfully for token "${bookingToken}".`);
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] ENDING successfully for token "${bookingToken}". ActionToken: ${currentActionToken}`);
     return {
       message, errors: null, success: true, actionToken: currentActionToken, updatedGuestData: updatedGuestData, currentStep: stepNumber -1,
     };
@@ -334,15 +341,15 @@ async function updateBookingStep(
 }
 
 // --- Exported Server Actions ---
+// Outer try-catch for each action to ensure a FormState is always returned
 
 export async function submitGastStammdatenAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const serverActionToken = generateActionToken();
   console.log(`[Action submitGastStammdatenAction BEGIN] Token: "${bookingToken}". Action Token: ${serverActionToken}. Prev Step: ${prevState.currentStep}`);
   try {
     return await updateBookingStep(bookingToken, 1, gastStammdatenSchema, formData, {}, serverActionToken);
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Action submitGastStammdatenAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, err.message, err.stack?.substring(0, 800));
+  } catch (error: any) {
+    console.error(`[Action submitGastStammdatenAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, error.message, error.stack?.substring(0, 800));
     return {
       message: "Ein schwerwiegender Serverfehler ist beim Verarbeiten der Stammdaten aufgetreten (Code SA-STAMM-CATCH).",
       errors: { global: ["Serverfehler bei Stammdaten-Verarbeitung."] },
@@ -357,11 +364,10 @@ export async function submitAusweisdokumenteAction(bookingToken: string, prevSta
   try {
     logFormDataMinimal(`[Action submitAusweisdokumenteAction FormData BEFORE updateBookingStep]`, bookingToken, Object.fromEntries(formData.entries()));
     const result = await updateBookingStep(bookingToken, 2, ausweisdokumenteSchema, formData, {}, serverActionToken);
-    console.log(`[Action submitAusweisdokumenteAction AFTER updateBookingStep] Result for token "${bookingToken}":`, JSON.stringify(result, stringifyReplacer, 2));
+    console.log(`[Action submitAusweisdokumenteAction AFTER updateBookingStep] Result for token "${bookingToken}" (first 300 chars):`, JSON.stringify(result, stringifyReplacer, 2).substring(0,300)+"...");
     return result;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Action submitAusweisdokumenteAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, err.message, err.stack?.substring(0, 800));
+  } catch (error: any) {
+    console.error(`[Action submitAusweisdokumenteAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, error.message, error.stack?.substring(0, 800));
     return {
       message: `Ein schwerwiegender Serverfehler ist beim Verarbeiten der Ausweisdokumente aufgetreten (Code SA-AUSWEIS-CATCH).`,
       errors: { global: ["Serverfehler bei Ausweisdokument-Verarbeitung."] },
@@ -375,13 +381,11 @@ export async function submitZahlungsinformationenAction(bookingToken: string, pr
   console.log(`[Action submitZahlungsinformationenAction BEGIN] Token: "${bookingToken}". Action Token: ${serverActionToken}. Prev Step: ${prevState.currentStep}`);
   try {
     logFormDataMinimal(`[Action submitZahlungsinformationenAction FormData BEFORE updateBookingStep]`, bookingToken, Object.fromEntries(formData.entries()));
-    // Der 'zahlungsbetrag' wird jetzt vom Schema validiert und ist in dataFromForm
     const result = await updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, {}, serverActionToken);
-    console.log(`[Action submitZahlungsinformationenAction AFTER updateBookingStep] Result for token "${bookingToken}":`, JSON.stringify(result, stringifyReplacer, 2));
+    console.log(`[Action submitZahlungsinformationenAction AFTER updateBookingStep] Result for token "${bookingToken}" (first 300 chars):`, JSON.stringify(result, stringifyReplacer, 2).substring(0,300)+"...");
     return result;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Action submitZahlungsinformationenAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, err.message, err.stack?.substring(0, 800));
+  } catch (error: any) {
+    console.error(`[Action submitZahlungsinformationenAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, error.message, error.stack?.substring(0, 800));
     return {
       message: "Ein schwerwiegender Serverfehler ist beim Verarbeiten der Zahlungsinformationen aufgetreten (Code SA-ZAHLUNG-CATCH).",
       errors: { global: ["Serverfehler bei Zahlungsinformationen-Verarbeitung."] },
@@ -396,11 +400,10 @@ export async function submitEndgueltigeBestaetigungAction(bookingToken: string, 
   try {
     logFormDataMinimal(`[Action submitEndgueltigeBestaetigungAction FormData BEFORE updateBookingStep]`, bookingToken, Object.fromEntries(formData.entries()));
     const result = await updateBookingStep(bookingToken, 4, uebersichtBestaetigungSchema, formData, {}, serverActionToken);
-    console.log(`[Action submitEndgueltigeBestaetigungAction AFTER updateBookingStep] Result for token "${bookingToken}":`, JSON.stringify(result, stringifyReplacer, 2));
+    console.log(`[Action submitEndgueltigeBestaetigungAction AFTER updateBookingStep] Result for token "${bookingToken}" (first 300 chars):`, JSON.stringify(result, stringifyReplacer, 2).substring(0,300)+"...");
     return result;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Action submitEndgueltigeBestaetigungAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, err.message, err.stack?.substring(0, 800));
+  } catch (error: any) {
+    console.error(`[Action submitEndgueltigeBestaetigungAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, error.message, error.stack?.substring(0, 800));
     return {
       message: "Ein schwerwiegender Serverfehler ist beim Abschließen der Buchung aufgetreten (Code SA-FINAL-CATCH).",
       errors: { global: ["Serverfehler beim Abschluss der Buchung."] },
@@ -426,7 +429,8 @@ export async function createBookingAction(prevState: FormState | any, formData: 
         message: "Fehler bei der Validierung der Buchungsdaten.",
         success: false,
         actionToken: serverActionToken,
-      };
+        bookingToken: null, // Hinzugefügt für Konsistenz mit dem erwarteten Rückgabetyp
+      } as any; // Type assertion to satisfy broader FormState while including bookingToken for this specific action
     }
 
     const bookingData = validatedFields.data;
@@ -463,24 +467,25 @@ export async function createBookingAction(prevState: FormState | any, formData: 
     console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
 
     revalidatePath("/admin/dashboard", "layout");
-    revalidatePath(`/buchung/${newBookingToken}`, "layout"); // Revalidate the guest booking page for the new token
+    revalidatePath(`/buchung/${newBookingToken}`, "layout"); 
 
     return {
-      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
+      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt.`,
       errors: null,
       success: true,
       actionToken: serverActionToken,
-      updatedGuestData: newBooking.guestSubmittedData, // For consistency, though not strictly needed here
-    };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    console.error("[Action createBookingAction CRITICAL UNCAUGHT ERROR]:", error.message, error.stack?.substring(0,800));
+      updatedGuestData: newBooking.guestSubmittedData, 
+      bookingToken: newBookingToken, // For CreateBookingDialog to access
+    } as any; // Type assertion
+  } catch (e: any) {
+    console.error("[Action createBookingAction CRITICAL UNCAUGHT ERROR]:", e.message, e.stack?.substring(0,800));
     return {
         message: "Datenbankfehler: Buchung konnte nicht erstellt werden (Code SA-CREATE-CATCH).",
         errors: { global: ["Serverfehler beim Erstellen der Buchung."] },
         success: false,
         actionToken: serverActionToken,
-    };
+        bookingToken: null,
+    } as any; // Type assertion
   }
 }
 
@@ -488,7 +493,7 @@ export async function createBookingAction(prevState: FormState | any, formData: 
 export async function deleteBookingsAction(bookingIds: string[]): Promise<{ success: boolean; message: string, actionToken: string }> {
   const actionToken = generateActionToken();
   console.log(`[Action deleteBookingsAction BEGIN] Attempting to delete bookings with IDs: ${bookingIds.join(', ')}. Action Token: ${actionToken}`);
-
+  
   if (!bookingIds || bookingIds.length === 0) {
     console.warn("[Action deleteBookingsAction] No booking IDs provided for deletion.");
     return { success: false, message: "Keine Buchungs-IDs zum Löschen angegeben.", actionToken };
@@ -498,18 +503,15 @@ export async function deleteBookingsAction(bookingIds: string[]): Promise<{ succ
     const deleteSuccess = deleteMockBookingsByIds(bookingIds);
 
     if (deleteSuccess) {
-      revalidatePath("/admin/dashboard", "layout"); // Revalidate the dashboard to show updated list
+      revalidatePath("/admin/dashboard", "layout"); 
       console.log(`[Action deleteBookingsAction] Successfully deleted bookings. Revalidating dashboard.`);
       return { success: true, message: `${bookingIds.length} Buchung(en) erfolgreich gelöscht.`, actionToken };
     } else {
       console.warn(`[Action deleteBookingsAction] deleteMockBookingsByIds reported NO success for IDs: ${bookingIds.join(', ')}`);
       return { success: false, message: "Buchungen konnten nicht aus der Mock-DB gelöscht werden (interne Logik).", actionToken };
     }
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    console.error(`[Action deleteBookingsAction CRITICAL UNCAUGHT ERROR] Error deleting bookings: ${err.message}`, err.stack?.substring(0, 800));
-    return { success: false, message: `Fehler beim Löschen der Buchungen (Code SA-DELETE-CATCH): ${err.message}`, actionToken };
+  } catch (error: any) {
+    console.error(`[Action deleteBookingsAction CRITICAL UNCAUGHT ERROR] Error deleting bookings: ${error.message}`, error.stack?.substring(0, 800));
+    return { success: false, message: `Fehler beim Löschen der Buchungen (Code SA-DELETE-CATCH): ${error.message}`, actionToken };
   }
 }
-
-    
