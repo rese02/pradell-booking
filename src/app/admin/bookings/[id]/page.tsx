@@ -20,7 +20,7 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
   } else {
     const guestDataSummary = booking.guestSubmittedData 
-        ? { submitted: true, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
+        ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
         : { submitted: false };
     console.log(`[Page admin/bookings/[id]] Found booking for id ${id}. Guest Data Summary:`, guestDataSummary);
     // Log URLs for debugging
@@ -89,7 +89,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
-    if (value.startsWith("data:image/")) {
+    if (value.startsWith("data:image/")) { // For images stored as data URIs
       displayValue = (
         <div className="mt-1 rounded-md border overflow-hidden relative w-40 h-24">
           <Image src={value} alt={`${label} Vorschau`} layout="fill" objectFit="contain" data-ai-hint={documentHint || "document"}/>
@@ -100,15 +100,19 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
             </Button>
         </div>
       );
-    } else if (value.startsWith("mock-pdf-url:")) {
-      const fileName = decodeURIComponent(value.substring("mock-pdf-url:".length));
+    } else if (value.startsWith("mock-file-url:")) { // For mock file markers (PDFs or other files)
+      const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
       displayValue = (
-        <Button asChild variant="outline" size="sm">
-          {/* In a real app, this link would point to the actual PDF download/view URL */}
-          <Link href="#" target="_blank" rel="noopener noreferrer" title={`PDF: ${fileName} (Mock-Link)`}>
-            <FileIcon className="mr-2 h-4 w-4"/> {fileName}
-          </Link>
-        </Button>
+         <div className="flex items-center gap-2 mt-1">
+            <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+            <span className="text-sm font-medium">{fileName}</span>
+            {/* In a real app, this Link would point to a download/view URL for the file stored in cloud storage */}
+            {/* <Button asChild variant="outline" size="sm">
+                <Link href="#" target="_blank" rel="noopener noreferrer" title={`Datei: ${fileName} (Mock-Link)`}>
+                    Ansehen
+                </Link>
+            </Button> */}
+        </div>
       );
     } else if (value.startsWith("https://placehold.co")) { // Fallback for old placeholders
         displayValue = (
@@ -216,7 +220,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
           )}
 
 
-          {guestData && (guestData.gastVorname || guestData.email) && ( 
+          {guestData && (guestData.gastVorname || guestData.email || guestData.hauptgastAusweisVorderseiteUrl || guestData.zahlungsbelegUrl ) && ( 
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>
@@ -286,3 +290,4 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
   );
 }
 
+    
