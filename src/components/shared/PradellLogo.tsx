@@ -20,3 +20,4 @@ export function PradellLogo({ className }: { className?: string }) {
     </div>
   );
 }
+ll
