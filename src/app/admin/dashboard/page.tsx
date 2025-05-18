@@ -4,15 +4,16 @@ import { CreateBookingDialog } from "@/components/admin/CreateBookingDialog";
 import type { Booking } from "@/lib/definitions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2 } from "lucide-react";
+import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getBookingsFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
 
 async function fetchBookings(): Promise<Booking[]> {
   console.log("[AdminDashboardPage] Fetching bookings from Firestore...");
-  const bookings = await getBookingsFromFirestore();
+  // This function will now throw an error if Firestore is not initialized or if fetching fails
+  const bookings = await getBookingsFromFirestore(); 
   console.log(`[AdminDashboardPage] Fetched ${bookings.length} bookings.`);
-  return bookings; // Already sorted by createdAt desc in getBookingsFromFirestore
+  return bookings;
 }
 
 async function getDashboardStats(bookings: Booking[]) {
@@ -78,8 +79,20 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, descripti
 };
 
 export default async function AdminDashboardPage() {
-  const bookings = await fetchBookings();
-  const stats = await getDashboardStats(bookings);
+  let bookings: Booking[] = [];
+  let stats = { arrivalsToday: 0, departuresToday: 0, newBookingsToday: 0 };
+  let fetchError: string | null = null;
+
+  try {
+    console.log("[AdminDashboardPage] Attempting to fetch bookings and calculate stats...");
+    bookings = await fetchBookings();
+    stats = await getDashboardStats(bookings);
+    console.log("[AdminDashboardPage] Successfully fetched bookings and calculated stats.");
+  } catch (error: any) {
+    console.error("[AdminDashboardPage] Critical error fetching data for dashboard:", error.message, error.stack?.substring(0,500));
+    fetchError = "Fehler beim Laden der Buchungsdaten. Bitte überprüfen Sie die Server-Konfiguration und -Logs. Stellen Sie sicher, dass Firebase korrekt initialisiert ist und die Firestore API aktiviert ist.";
+    // To ensure the page still renders, we keep bookings as [] and stats as default.
+  }
 
   return (
     <TooltipProvider>
@@ -94,29 +107,46 @@ export default async function AdminDashboardPage() {
           <CreateBookingDialog />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3 mb-6">
-          <StatCard
-            title="Ankünfte heute"
-            value={stats.arrivalsToday}
-            icon={ArrivalIcon}
-            description="Gäste die heute anreisen"
-            tooltipText="Anzahl der geplanten Ankünfte für den heutigen Tag."
-          />
-          <StatCard
-            title="Abreisen heute"
-            value={stats.departuresToday}
-            icon={DepartureIcon}
-            description="Gäste die heute auschecken"
-            tooltipText="Anzahl der geplanten Abreisen für den heutigen Tag."
-          />
-          <StatCard
-            title="Neue Buchungen heute"
-            value={`${stats.newBookingsToday > 0 ? '+' : ''}${stats.newBookingsToday}`}
-            icon={NewBookingIcon}
-            description="Heute erstellte Buchungen"
-            tooltipText="Anzahl der Buchungen, die heute neu erstellt wurden."
-          />
-        </div>
+        {fetchError && (
+          <Card className="mb-6 bg-destructive/10 border-destructive">
+            <CardHeader>
+              <CardTitle className="text-destructive flex items-center">
+                <AlertTriangle className="mr-2 h-5 w-5" />
+                Fehler beim Laden der Daten
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-destructive-foreground">{fetchError}</p>
+              <p className="text-xs text-muted-foreground mt-2">Bitte überprüfen Sie die Server-Logs für weitere Details und stellen Sie sicher, dass die Firebase-Konfiguration korrekt ist (insbesondere die `.env.local`-Datei und die aktivierten Firebase-Dienste in der Konsole).</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!fetchError && (
+          <div className="grid gap-4 md:grid-cols-3 mb-6">
+            <StatCard
+              title="Ankünfte heute"
+              value={stats.arrivalsToday}
+              icon={ArrivalIcon}
+              description="Gäste die heute anreisen"
+              tooltipText="Anzahl der geplanten Ankünfte für den heutigen Tag."
+            />
+            <StatCard
+              title="Abreisen heute"
+              value={stats.departuresToday}
+              icon={DepartureIcon}
+              description="Gäste die heute auschecken"
+              tooltipText="Anzahl der geplanten Abreisen für den heutigen Tag."
+            />
+            <StatCard
+              title="Neue Buchungen heute"
+              value={`${stats.newBookingsToday > 0 ? '+' : ''}${stats.newBookingsToday}`}
+              icon={NewBookingIcon}
+              description="Heute erstellte Buchungen"
+              tooltipText="Anzahl der Buchungen, die heute neu erstellt wurden."
+            />
+          </div>
+        )}
         
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between">
@@ -128,13 +158,19 @@ export default async function AdminDashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {bookings.length > 0 ? (
+            {fetchError && !bookings.length ? (
+                 <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+                    <h3 className="text-xl font-semibold text-destructive">Daten konnten nicht geladen werden</h3>
+                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben.</p>
+                </div>
+            ) : bookings.length > 0 ? (
                 <BookingsDataTable data={bookings} />
             ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                     <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
-                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
+                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden oder es konnten keine Daten geladen werden. Erstellen Sie eine neue Buchung.</p>
                     <div className="mt-6">
                          <CreateBookingDialog />
                     </div>
