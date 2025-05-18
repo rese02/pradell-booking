@@ -8,14 +8,14 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn } from "lucide-react";
-import { Logo } from "@/components/shared/Logo";
+import { Logo } from "../../../components/shared/Logo"; // Changed to relative import
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 
 
 const loginSchema = z.object({
   email: z.string().email({ message: "Ungültige E-Mail-Adresse." }),
-  password: z.string().min(1, { message: "Passwort ist erforderlich." }), // Allow any non-empty password for Pradell!
+  password: z.string().min(1, { message: "Passwort ist erforderlich." }), 
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
