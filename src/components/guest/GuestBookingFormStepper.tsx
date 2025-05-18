@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, type ReactNode, useActionState, useMemo, useRef } from "react";
@@ -6,20 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea"; 
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent, BookUser } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent, BookUser, CircleUser } from "lucide-react";
+import { Badge } from "@/components/ui/badge"; // Ensure Badge is imported
 import { 
   submitGastStammdatenAction,
   submitAusweisdokumenteAction,
   submitZahlungsinformationenAction,
   submitEndgueltigeBestaetigungAction
 } from "@/lib/actions";
-import type { Booking, GuestSubmittedData } from "@/lib/definitions";
+import type { Booking, GuestSubmittedData, GastStammdatenFormData, AusweisdokumenteFormData, ZahlungsinformationenFormData, UebersichtBestaetigungFormData } from "@/lib/definitions";
 import { cn } from "@/lib/utils";
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { PradellLogo } from "@/components/shared/PradellLogo";
 import Link from "next/link";
@@ -41,7 +39,6 @@ interface StepContentProps {
   bookingDetails?: Booking | null; 
   guestData?: GuestSubmittedData | null;
   formState: FormState;
-  currentActionToken?: string; 
 }
 
 type FormState = {
@@ -62,6 +59,7 @@ const formatDateDisplay = (dateString?: Date | string) => {
     if (!dateString) return "N/A";
     try {
       const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
+      if (!isValid(date)) return "Ungültiges Datum";
       return format(date, "dd.MM.yyyy", { locale: de });
     } catch {
       return String(dateString); 
@@ -71,6 +69,7 @@ const formatDateForInput = (dateString?: Date | string) => {
     if (!dateString) return "";
     try {
         const date = typeof dateString === 'string' ? parseISO(dateString) : dateString;
+        if (!isValid(date)) return "";
         return format(date, "yyyy-MM-dd");
     } catch {
         return "";
@@ -84,10 +83,9 @@ const formatCurrency = (amount?: number) => {
 
 
 // --- Schritt 1: Gast-Stammdaten ---
-const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState, currentActionToken }) => {
+const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState }) => {
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={currentActionToken} />
       <div>
         <h2 className="text-xl font-semibold">Ihre Kontaktdaten (Hauptgast)</h2>
         <p className="text-sm text-muted-foreground">Bitte füllen Sie die folgenden Felder aus.</p>
@@ -147,23 +145,27 @@ const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState, 
 };
 
 // --- Schritt 2: Ausweisdokument(e) ---
-const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState, currentActionToken }) => {
+const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState }) => {
   const [fileNameVorderseite, setFileNameVorderseite] = useState<string | null>(null);
   const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
+  
+  const vorderseiteUrl = guestData?.hauptgastAusweisVorderseiteUrl;
+  const rueckseiteUrl = guestData?.hauptgastAusweisRückseiteUrl;
 
   useEffect(() => {
-    if (guestData?.hauptgastAusweisVorderseiteUrl && !fileNameVorderseite) {
-        setFileNameVorderseite("Bereits hochgeladen (Vorderseite)");
+    if (vorderseiteUrl && !fileNameVorderseite) {
+      const decodedName = vorderseiteUrl.includes("?text=") ? decodeURIComponent(vorderseiteUrl.substring(vorderseiteUrl.lastIndexOf('=') + 1)) : "Bereits hochgeladen (Vorderseite)";
+      setFileNameVorderseite(decodedName);
     }
-    if (guestData?.hauptgastAusweisRückseiteUrl && !fileNameRückseite) {
-        setFileNameRückseite("Bereits hochgeladen (Rückseite)");
+    if (rueckseiteUrl && !fileNameRückseite) {
+      const decodedName = rueckseiteUrl.includes("?text=") ? decodeURIComponent(rueckseiteUrl.substring(rueckseiteUrl.lastIndexOf('=') + 1)) : "Bereits hochgeladen (Rückseite)";
+      setFileNameRückseite(decodedName);
     }
-  }, [guestData, fileNameVorderseite, fileNameRückseite]);
+  }, [vorderseiteUrl, rueckseiteUrl, fileNameVorderseite, fileNameRückseite]);
 
 
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={currentActionToken} />
       <div>
         <h2 className="text-xl font-semibold">Ihre Ausweisdokumente (Hauptgast)</h2>
         <p className="text-sm text-muted-foreground">Bitte laden Sie eine Kopie Ihres Ausweisdokuments hoch (Vorder- und Rückseite, falls zutreffend).</p>
@@ -201,11 +203,11 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
                 <FileUp className="w-4 h-4 mr-2"/> Datei wählen
               </Label>
             </Button>
-            <span className="text-sm text-muted-foreground">{fileNameVorderseite || "Keine Datei ausgewählt"}</span>
+            <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameVorderseite || "Keine Datei ausgewählt"}</span>
           </div>
-           {guestData?.hauptgastAusweisVorderseiteUrl && (
+           {vorderseiteUrl && (
             <p className="text-xs text-muted-foreground mt-1">
-              Aktuell: <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Vorderseite ansehen</Link>
+              Aktuell: <Link href={vorderseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Vorderseite ansehen</Link>
             </p>
           )}
           <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
@@ -227,11 +229,11 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
                 <FileUp className="w-4 h-4 mr-2"/> Datei wählen
               </Label>
             </Button>
-            <span className="text-sm text-muted-foreground">{fileNameRückseite || "Keine Datei ausgewählt"}</span>
+            <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameRückseite || "Keine Datei ausgewählt"}</span>
           </div>
-          {guestData?.hauptgastAusweisRückseiteUrl && (
+          {rueckseiteUrl && (
             <p className="text-xs text-muted-foreground mt-1">
-              Aktuell: <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Rückseite ansehen</Link>
+              Aktuell: <Link href={rueckseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Rückseite ansehen</Link>
             </p>
           )}
           <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
@@ -243,23 +245,25 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
 };
 
 // --- Schritt 3: Zahlungsinformationen ---
-const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState, currentActionToken }) => {
+const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState }) => {
   const [fileNameBeleg, setFileNameBeleg] = useState<string | null>(null);
   const anzahlungsbetrag = useMemo(() => {
     const price = bookingDetails?.price;
     if (typeof price !== 'number') return 0;
     return parseFloat((price * 0.3).toFixed(2));
   }, [bookingDetails?.price]);
+  
+  const belegUrl = guestData?.zahlungsbelegUrl;
 
   useEffect(() => {
-    if (guestData?.zahlungsbelegUrl && !fileNameBeleg) {
-        setFileNameBeleg("Bereits hochgeladen (Beleg)");
+    if (belegUrl && !fileNameBeleg) {
+       const decodedName = belegUrl.includes("?text=") ? decodeURIComponent(belegUrl.substring(belegUrl.lastIndexOf('=') + 1)) : "Bereits hochgeladen (Beleg)";
+       setFileNameBeleg(decodedName);
     }
-  }, [guestData, fileNameBeleg]);
+  }, [belegUrl, fileNameBeleg]);
 
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={currentActionToken} />
       <div>
         <h2 className="text-xl font-semibold">Zahlungsinformationen</h2>
         <p className="text-sm text-muted-foreground">Bitte geben Sie die Details Ihrer Zahlung an.</p>
@@ -307,11 +311,11 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
               <FileUp className="w-4 h-4 mr-2"/> Datei wählen
             </Label>
           </Button>
-          <span className="text-sm text-muted-foreground">{fileNameBeleg || "Keine Datei ausgewählt"}</span>
+          <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameBeleg || "Keine Datei ausgewählt"}</span>
         </div>
-        {guestData?.zahlungsbelegUrl && (
+        {belegUrl && (
             <p className="text-xs text-muted-foreground mt-1">
-              Aktuell: <Link href={guestData.zahlungsbelegUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Beleg ansehen</Link>
+              Aktuell: <Link href={belegUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Beleg ansehen</Link>
             </p>
         )}
         <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF). Erst nach Upload und Validierung des Belegs wird die Buchung komplett bestätigt.</p>
@@ -323,15 +327,30 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
 
 
 // --- Schritt 4: Übersicht & Bestätigung ---
-const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState, currentActionToken }) => {
+const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState }) => {
   const display = (value?: string | number | boolean | null) => {
     if (typeof value === 'boolean') return value ? "Ja" : "Nein";
     return value || <span className="italic text-muted-foreground">N/A</span>;
   }
 
+  const getFileNameFromUrl = (url?: string) => {
+    if (!url) return "N/A";
+    if (url.includes("?text=")) { // Our simulated URLs
+      try {
+        return decodeURIComponent(url.substring(url.lastIndexOf('=') + 1));
+      } catch (e) {
+        return "Dateiname"; // Fallback
+      }
+    }
+    // For real URLs, you might parse the path
+    const parts = url.split('/');
+    return parts[parts.length -1] || "Datei";
+  };
+
+
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={currentActionToken} />
+      <input type="hidden" name="currentActionToken" value={formState.actionToken} />
       <div>
         <h2 className="text-xl font-semibold">Übersicht und Bestätigung</h2>
         <p className="text-sm text-muted-foreground">Bitte überprüfen Sie Ihre Angaben sorgfältig, bevor Sie die Buchung abschließen.</p>
@@ -358,8 +377,8 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
           <Separator className="my-3" />
           <h4 className="font-medium">Ausweisdokument</h4>
           <p><strong>Dokumenttyp:</strong> {display(guestData?.hauptgastDokumenttyp)}</p>
-          <p><strong>Ausweis Vorderseite:</strong> {guestData?.hauptgastAusweisVorderseiteUrl ? <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
-          <p><strong>Ausweis Rückseite:</strong> {guestData?.hauptgastAusweisRückseiteUrl ? <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
+          <p><strong>Ausweis Vorderseite:</strong> {guestData?.hauptgastAusweisVorderseiteUrl ? <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen ({getFileNameFromUrl(guestData.hauptgastAusweisVorderseiteUrl)})</Link> : display(null)}</p>
+          <p><strong>Ausweis Rückseite:</strong> {guestData?.hauptgastAusweisRückseiteUrl ? <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen ({getFileNameFromUrl(guestData.hauptgastAusweisRückseiteUrl)})</Link> : display(null)}</p>
         </CardContent>
       </Card>
       
@@ -369,8 +388,13 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
           <p><strong>Zahlungsart:</strong> {display(guestData?.zahlungsart)}</p>
           <p><strong>Anzahlungsbetrag (30%):</strong> {formatCurrency(guestData?.zahlungsbetrag)}</p>
           <p><strong>Zahlungsdatum:</strong> {formatDateDisplay(guestData?.zahlungsdatum) || display(null)}</p>
-          <p><strong>Zahlungsbeleg:</strong> {guestData?.zahlungsbelegUrl ? <Link href={guestData.zahlungsbelegUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen</Link> : display(null)}</p>
-          <p><strong>Zahlungsstatus:</strong> <Badge variant={bookingDetails?.status === "Confirmed" ? "default" : "secondary"}>{bookingDetails?.status === "Confirmed" ? "Bezahlt (Bestätigt)" : "Ausstehend"}</Badge></p>
+          <p><strong>Zahlungsbeleg:</strong> {guestData?.zahlungsbelegUrl ? <Link href={guestData.zahlungsbelegUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Ansehen ({getFileNameFromUrl(guestData.zahlungsbelegUrl)})</Link> : display(null)}</p>
+          <div className="text-sm"> {/* Changed p to div here */}
+            <strong>Zahlungsstatus:</strong>{' '}
+            <Badge variant={bookingDetails?.status === "Confirmed" ? "default" : "secondary"}>
+              {bookingDetails?.status === "Confirmed" ? "Bezahlt (Bestätigt)" : "Ausstehend"}
+            </Badge>
+          </div>
         </CardContent>
       </Card>
 
@@ -399,22 +423,26 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
 export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const { toast } = useToast();
   const lastProcessedActionTokenRef = useRef<string | undefined>(undefined);
+  
+  // Initialize with data from server, or default if not present
+  const [latestGuestSubmittedData, setLatestGuestSubmittedData] = useState<GuestSubmittedData | null | undefined>(
+    initialBookingDetails?.guestSubmittedData
+  );
 
   const initialStepFromDb = useMemo(() => {
-    return initialBookingDetails?.guestSubmittedData?.lastCompletedStep || 0;
-  }, [initialBookingDetails?.guestSubmittedData?.lastCompletedStep]);
-  
-  const [currentStep, setCurrentStep] = useState(initialStepFromDb);
-  const [latestGuestSubmittedData, setLatestGuestSubmittedData] = useState<GuestSubmittedData | null | undefined>(initialBookingDetails?.guestSubmittedData);
+    // If guest data exists and has a last completed step, use it, otherwise start at 0
+    return latestGuestSubmittedData?.lastCompletedStep || 0;
+  }, [latestGuestSubmittedData?.lastCompletedStep]);
 
+  const [currentStep, setCurrentStep] = useState(initialStepFromDb);
 
   console.log(`[GuestBookingFormStepper] Rendering. Token: ${bookingToken}. Initial DB Step: ${initialStepFromDb}, Current Client Step: ${currentStep}. Last processed action token: ${lastProcessedActionTokenRef.current}`);
   console.log(`[GuestBookingFormStepper] Initial bookingDetails:`, initialBookingDetails);
-  console.log(`[GuestBookingFormStepper] Initial latestGuestSubmittedData:`, latestGuestSubmittedData);
+  console.log(`[GuestBookingFormStepper] Current latestGuestSubmittedData:`, latestGuestSubmittedData);
 
 
   const steps: Step[] = useMemo(() => [
-    { id: "gastdaten", name: "Kontaktdaten", Icon: UserCircle, StepIcon: UserCircle, Content: GastStammdatenStep, action: submitGastStammdatenAction },
+    { id: "gastdaten", name: "Kontaktdaten", Icon: CircleUser, StepIcon: CircleUser, Content: GastStammdatenStep, action: submitGastStammdatenAction },
     { id: "ausweis", name: "Ausweis", Icon: BookUser, StepIcon: BookUser, Content: AusweisdokumenteStep, action: submitAusweisdokumenteAction },
     { id: "zahlung", name: "Zahlung", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction },
     { id: "uebersicht", name: "Bestätigung", Icon: CheckCircle, StepIcon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction },
@@ -424,7 +452,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   const [formState, formAction, isPending] = useActionState(currentAction, initialFormState);
 
   useEffect(() => {
-    console.log("[GuestBookingFormStepper useEffect] formState changed:", JSON.parse(JSON.stringify(formState)));
+    console.log("[GuestBookingFormStepper useEffect] formState changed:", JSON.parse(JSON.stringify(formState))); // Deep copy for logging
     console.log(`[GuestBookingFormStepper useEffect] Conditions: success=${formState.success}, actionToken=${formState.actionToken}, lastProcessedToken=${lastProcessedActionTokenRef.current}, currentStep=${currentStep}`);
 
     if (formState.message && (formState.actionToken !== lastProcessedActionTokenRef.current || !formState.success || (formState.errors && Object.keys(formState.errors).length > 0) )) {
@@ -449,6 +477,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         setCurrentStep(prev => prev + 1);
       } else if (currentStep === steps.length - 1) {
         console.log("[GuestBookingFormStepper useEffect] All interactive steps completed. Finalizing. Moving to success screen.");
+        // This will trigger the success screen render as currentStep will be >= steps.length
         setCurrentStep(steps.length); 
       }
     } else if (formState.success && formState.actionToken && formState.actionToken === lastProcessedActionTokenRef.current) {
@@ -466,11 +495,13 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     );
   }
   
+  // Determine if we should show the success screen
   const showSuccessScreen = currentStep >= steps.length || 
-                           (initialBookingDetails.status === "Confirmed" && initialBookingDetails.guestSubmittedData?.submittedAt);
+                           (initialBookingDetails.status === "Confirmed" && latestGuestSubmittedData?.submittedAt && latestGuestSubmittedData.lastCompletedStep === steps.length);
+
 
   if (showSuccessScreen) {
-    console.log(`[GuestBookingFormStepper] Reached final state or booking already confirmed. currentStep: ${currentStep}, booking status: ${initialBookingDetails.status}`);
+    console.log(`[GuestBookingFormStepper] Reached final state or booking already confirmed. currentStep: ${currentStep}, booking status: ${initialBookingDetails.status}, lastCompletedStep: ${latestGuestSubmittedData?.lastCompletedStep}`);
     const guestName = latestGuestSubmittedData?.gastVorname || initialBookingDetails?.guestFirstName || 'Gast';
     return (
       <>
@@ -497,6 +528,14 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     );
   }
 
+  // Ensure currentStep is within bounds for accessing steps array
+  if (currentStep < 0 || currentStep >= steps.length) {
+    console.error(`[GuestBookingFormStepper] Invalid currentStep: ${currentStep}. Resetting to 0.`);
+    setCurrentStep(0); // Fallback, should ideally not happen
+    return <p>Laden...</p>; // Or some loading/error indicator
+  }
+
+
   const ActiveStepContent = steps[currentStep].Content;
   const CurrentStepIconComponent = steps[currentStep].Icon; 
   const stepNumberForDisplay = currentStep + 1;
@@ -512,7 +551,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <div className="mb-12">
           <ol className="flex items-center w-full">
             {steps.map((step, index) => {
-              const StepIconComponent = step.StepIcon; 
+              const StepIcon = steps[index]?.StepIcon || Info; // Fallback Icon
               return (
               <li
                 key={step.id}
@@ -532,7 +571,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                       index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" :
                       "bg-muted text-muted-foreground border"
                   )}>
-                    {index < currentStep ? <Check className="w-5 h-5" /> : (StepIconComponent ? <StepIconComponent className="w-5 h-5"/> : index +1) }
+                    {index < currentStep ? <Check className="w-5 h-5" /> : <StepIcon className="w-5 h-5"/> }
                   </span>
                   <span className={cn(
                       "text-xs px-1", 
@@ -555,14 +594,12 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
               </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            {/* Das key-Attribut hier ist entscheidend, um den Form-State bei Schrittwechsel zurückzusetzen */}
             <form action={formAction} key={currentStep}> 
               <ActiveStepContent
                 bookingToken={bookingToken}
                 bookingDetails={initialBookingDetails}
                 guestData={latestGuestSubmittedData}  
                 formState={formState}
-                currentActionToken={lastProcessedActionTokenRef.current || initialFormState.actionToken}
               />
               {formState.message && !formState.success && Object.keys(formState.errors || {}).length === 0 && (
                 <div className="mt-4 p-3 rounded-md bg-destructive/10 text-destructive text-sm flex items-center">
