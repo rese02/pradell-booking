@@ -3,14 +3,16 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import type { Booking, GuestSubmittedData, AdminCreateBookingFormData } from "@/lib/definitions";
+import type { Booking, GuestSubmittedData } from "@/lib/definitions";
 import {
   findMockBookingByToken,
   updateMockBookingByToken,
   addMockBooking,
   deleteMockBookingsByIds,
   getMockBookings,
-} from "@/lib/mock-db";
+} from "@/lib/mock-db"; // Will be replaced by Firestore later
+import { storage } from "@/lib/firebase"; // Import Firebase Storage instance
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // --- Zod Schemas ---
 
@@ -46,7 +48,7 @@ const fileSchema = z.instanceof(File).optional().nullable()
   .refine((file) => !file || file.size === 0 || file.size <= MAX_FILE_SIZE, `Maximale Dateigröße ist 10MB.`)
   .refine(
     (file) => {
-      if (!file || file.size === 0) return true; // Allow empty file / no file
+      if (!file || file.size === 0) return true;
       return ACCEPTED_FILE_TYPES.includes(file.type);
     },
     (file) => ({ message: `Nur ${[...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_PDF_TYPES].map(t => t.split('/')[1]).join(', ').toUpperCase()} Dateien sind erlaubt. Erhalten: ${file?.type || 'unbekannt'}` })
@@ -59,7 +61,8 @@ const gastStammdatenSchema = z.object({
   geburtsdatum: z.string().optional().refine(val => {
     if (!val || val === "") return true;
     const date = new Date(val);
-    return !isNaN(date.getTime());
+    const age = new Date().getFullYear() - date.getFullYear();
+    return !isNaN(date.getTime()) && age >=0 && age < 120; // Basic age check
   }, { message: "Ungültiges Geburtsdatum." }),
   email: z.string().email("Ungültige E-Mail-Adresse."),
   telefon: z.string().min(1, "Telefonnummer ist erforderlich."),
@@ -118,10 +121,18 @@ function stringifyReplacer(key: string, value: any) {
 
 function logSafe(context: string, data: any) {
     try {
-        console.log(context, JSON.stringify(data, stringifyReplacer, 2));
+        // For very large objects, log only top-level keys or a summary
+        if (typeof data === 'object' && data !== null && Object.keys(data).length > 10) {
+            console.log(`${context} (Object with ${Object.keys(data).length} keys, logging summary):`, {
+                keys: Object.keys(data),
+                // Log small parts of potentially large data like guestSubmittedData
+                guestSubmittedDataSummary: data.guestSubmittedData ? JSON.stringify(data.guestSubmittedData, (k,v) => (v instanceof File ? {name:v.name, size:v.size, type:v.type} : v), 2).substring(0, 300) + "..." : "N/A"
+            });
+        } else {
+            console.log(context, JSON.stringify(data, stringifyReplacer, 2));
+        }
     } catch (e) {
         console.error(`${context} FAILED TO STRINGIFY/LOG:`, e);
-        // Attempt to log keys if full stringify fails
         if (typeof data === 'object' && data !== null) {
             console.log(`${context} Logging keys of problematic object:`, Object.keys(data));
         } else {
@@ -178,29 +189,16 @@ async function updateBookingStep(
   }
   
   const dataFromForm = validatedFields.data;
-  logSafe(`[Action updateBookingStep - Step ${stepNumber}] Zod validation successful for token "${bookingToken}". Validated data:`, dataFromForm);
-  
-  const fileFieldsToLog: Record<string, any> = {};
-  const fileFieldsDefinition: { formDataKey: keyof typeof dataFromForm; urlKey: keyof GuestSubmittedData }[] = [
-    { formDataKey: 'hauptgastAusweisVorderseite', urlKey: 'hauptgastAusweisVorderseiteUrl' },
-    { formDataKey: 'hauptgastAusweisRückseite', urlKey: 'hauptgastAusweisRückseiteUrl' },
-    { formDataKey: 'zahlungsbeleg', urlKey: 'zahlungsbelegUrl' },
-  ];
-
-  fileFieldsDefinition.forEach(fieldDef => {
-    if (fieldDef.formDataKey in dataFromForm && dataFromForm[fieldDef.formDataKey] instanceof File) {
-      const file = dataFromForm[fieldDef.formDataKey] as File;
-      fileFieldsToLog[String(fieldDef.formDataKey)] = { name: file.name, size: file.size, type: file.type };
-    }
-  });
-  if(Object.keys(fileFieldsToLog).length > 0) console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated File objects from Zod:`, JSON.stringify(fileFieldsToLog));
+  const fileFieldsInForm = Object.keys(dataFromForm).filter(key => dataFromForm[key] instanceof File && dataFromForm[key].size > 0);
+  console.log(`[Action updateBookingStep - Step ${stepNumber}] Zod validation successful for token "${bookingToken}". File fields found: ${fileFieldsInForm.join(', ') || 'None'}.`);
 
 
   let booking: Booking | undefined;
   let currentGuestDataSnapshot: GuestSubmittedData | null = null;
 
   try {
-    booking = findMockBookingByToken(bookingToken);
+    // In the future, this will fetch from Firestore. For now, mock DB.
+    booking = findMockBookingByToken(bookingToken); 
     if (!booking) {
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] Booking NOT FOUND for token: "${bookingToken}"`);
       return { message: "Buchung nicht gefunden (Code UDB-BNF).", errors: { global: ["Buchung nicht gefunden."] }, success: false, actionToken: serverActionToken, updatedGuestData: null, currentStep: stepNumber - 1 };
@@ -218,57 +216,68 @@ async function updateBookingStep(
 
   let updatedGuestData: GuestSubmittedData = {
     ...(currentGuestDataSnapshot || { lastCompletedStep: -1 }),
-    ...(additionalDataToMerge || {}), // Additional data like zahlungsbetrag from step 3
-    ...dataFromForm, // Data from the current step's form
+    ...(additionalDataToMerge || {}),
+    ...dataFromForm,
   };
-  logSafe(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data BEFORE file processing for token "${bookingToken}":`, updatedGuestData);
+  // Remove File objects from updatedGuestData before logging/saving, URLs will be added
+  fileFieldsInForm.forEach(key => delete (updatedGuestData as any)[key]);
+  logSafe(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data (files removed for now) for token "${bookingToken}":`, updatedGuestData);
 
+  // Define which form fields correspond to which URL keys in GuestSubmittedData
+  const fileFieldsDefinition: { formDataKey: keyof typeof dataFromForm; urlKey: keyof GuestSubmittedData }[] = [
+    { formDataKey: 'hauptgastAusweisVorderseite', urlKey: 'hauptgastAusweisVorderseiteUrl' },
+    { formDataKey: 'hauptgastAusweisRückseite', urlKey: 'hauptgastAusweisRückseiteUrl' },
+    { formDataKey: 'zahlungsbeleg', urlKey: 'zahlungsbelegUrl' },
+  ];
+  
+  for (const fieldDef of fileFieldsDefinition) {
+    const file = dataFromForm[fieldDef.formDataKey] as File | undefined | null;
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Processing file field: ${String(fieldDef.formDataKey)} for token "${bookingToken}". File in validated data: ${!!(file && file.size > 0)}`);
 
-  for (const field of fileFieldsDefinition) {
-    const file = dataFromForm[field.formDataKey as keyof typeof dataFromForm] as File | undefined | null;
-    console.log(`[Action updateBookingStep - Step ${stepNumber}] Processing file field: ${String(field.formDataKey)} for token "${bookingToken}". File in validated data: ${!!(file && file.size > 0)}`);
+    if (file instanceof File && file.size > 0) {
+      try {
+        const filePath = `bookings/${bookingToken}/${String(fieldDef.formDataKey)}/${Date.now()}_${file.name}`;
+        const fileStorageRef = storageRef(storage, filePath);
+        
+        console.log(`[Action updateBookingStep - Step ${stepNumber}] Attempting to upload ${file.name} (size: ${file.size}, type: ${file.type}) to Firebase Storage at ${filePath} for token "${bookingToken}"`);
+        const fileBuffer = await file.arrayBuffer();
+        await uploadBytes(fileStorageRef, fileBuffer, { contentType: file.type });
+        const downloadURL = await getDownloadURL(fileStorageRef);
+        
+        (updatedGuestData as any)[fieldDef.urlKey] = downloadURL;
+        console.log(`[Action updateBookingStep - Step ${stepNumber}] Successfully uploaded ${file.name}. Download URL: ${downloadURL} stored in ${String(fieldDef.urlKey)} for token "${bookingToken}"`);
 
-    try {
-      if (file instanceof File && file.size > 0) {
-        // Store a mock URL with the filename, avoiding Data URI conversion for stability
-        (updatedGuestData as any)[field.urlKey] = `mock-file-url:${encodeURIComponent(file.name)}`;
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] Stored MOCK URL for ${file.name} (size: ${file.size}, type: ${file.type}) into key ${String(field.urlKey)} for token "${bookingToken}"`);
-      
-      } else if ((currentGuestDataSnapshot as any)?.[field.urlKey]) {
-        // No new file provided, keep the existing URL if there is one
-        (updatedGuestData as any)[field.urlKey] = (currentGuestDataSnapshot as any)[field.urlKey];
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(field.formDataKey)}, kept old URL: ${(updatedGuestData as any)[field.urlKey]?.substring(0,80)}... for token "${bookingToken}"`);
-      } else {
-        // No new file and no old file URL, so ensure the key is not present or is null/undefined
-        delete (updatedGuestData as any)[field.urlKey];
-         console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old URL for ${String(field.formDataKey)}. Ensured key ${String(field.urlKey)} is not present for token "${bookingToken}".`);
+      } catch (fileProcessingError: any) {
+        console.error(`[Action updateBookingStep - Step ${stepNumber}] Firebase Storage upload/processing FAILED for ${String(fieldDef.formDataKey)} (Token "${bookingToken}"):`, fileProcessingError.message, fileProcessingError.stack?.substring(0, 500));
+        return {
+          message: `Serverfehler: Dateiverarbeitung für ${String(fieldDef.formDataKey)} fehlgeschlagen: ${fileProcessingError.message}. (Code UDB-FIREBASE-UPLOAD)`,
+          errors: { [String(fieldDef.formDataKey)]: [`Hochladen fehlgeschlagen: ${fileProcessingError.message}`] },
+          success: false, actionToken: serverActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
+        };
       }
-    } catch (fileProcessingError: any) {
-      console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during file processing for ${String(field.formDataKey)} (Token "${bookingToken}"):`, fileProcessingError.message, fileProcessingError.stack?.substring(0, 500));
-      // Return the snapshot of guest data before this step's changes
-      return {
-        message: `Serverfehler: Dateiverarbeitung für ${String(field.formDataKey)} fehlgeschlagen (Code UDB-FILEPROC): ${fileProcessingError.message}.`,
-        errors: { [String(field.formDataKey)]: [fileProcessingError.message] },
-        success: false, actionToken: serverActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
-      };
+    } else if ((currentGuestDataSnapshot as any)?.[fieldDef.urlKey]) {
+      (updatedGuestData as any)[fieldDef.urlKey] = (currentGuestDataSnapshot as any)[fieldDef.urlKey];
+      console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(fieldDef.formDataKey)}, kept old URL: ${(updatedGuestData as any)[fieldDef.urlKey]?.substring(0,80)}... for token "${bookingToken}"`);
+    } else {
+      delete (updatedGuestData as any)[fieldDef.urlKey];
+      console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old URL for ${String(fieldDef.formDataKey)}. Ensured key ${String(fieldDef.urlKey)} is not present for token "${bookingToken}".`);
     }
   }
   
-  updatedGuestData.lastCompletedStep = Math.max(updatedGuestData.lastCompletedStep ?? -1, stepNumber - 1); 
+  updatedGuestData.lastCompletedStep = Math.max(updatedGuestData.lastCompletedStep ?? -1, stepNumber - 1);
   logSafe(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data POST-FILE-PROCESSING for token "${bookingToken}". New lastCompletedStep: ${updatedGuestData.lastCompletedStep}. Final guest data:`, updatedGuestData);
   
-  if (stepNumber === 4) { // Endgültige Bestätigung (Schritt 4 ist der letzte interaktive Schritt)
-    if (dataFromForm.agbAkzeptiert === true && dataFromForm.datenschutzAkzeptiert === true) {
+  if (stepNumber === 4) { // Final confirmation step
+    if (updatedGuestData.agbAkzeptiert === true && updatedGuestData.datenschutzAkzeptiert === true) {
       updatedGuestData.submittedAt = new Date().toISOString();
       console.log(`[Action updateBookingStep - Step ${stepNumber}] AGB & Datenschutz akzeptiert. SubmittedAt gesetzt für Token "${bookingToken}".`);
     } else {
-      // This case should be caught by Zod validation, but as a safeguard:
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] AGB und/oder Datenschutz NICHT akzeptiert (nach Zod-Validierung!) für Token "${bookingToken}". SubmittedAt NICHT gesetzt.`);
        return {
         message: "AGB und/oder Datenschutz wurden nicht akzeptiert.",
         errors: { 
-            agbAkzeptiert: dataFromForm.agbAkzeptiert ? undefined : ["AGB müssen akzeptiert werden."],
-            datenschutzAkzeptiert: dataFromForm.datenschutzAkzeptiert ? undefined : ["Datenschutz muss akzeptiert werden."],
+            agbAkzeptiert: updatedGuestData.agbAkzeptiert ? undefined : ["AGB müssen akzeptiert werden."],
+            datenschutzAkzeptiert: updatedGuestData.datenschutzAkzeptiert ? undefined : ["Datenschutz muss akzeptiert werden."],
          },
         success: false, actionToken: serverActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
       };
@@ -280,7 +289,6 @@ async function updateBookingStep(
     updatedAt: new Date().toISOString(),
   };
 
-  // Update guestFirstName and guestLastName if they were part of this step's data (e.g., step 1)
   if (updatedGuestData.gastVorname && updatedGuestData.gastNachname && stepNumber === 1) {
     bookingUpdates.guestFirstName = updatedGuestData.gastVorname;
     bookingUpdates.guestLastName = updatedGuestData.gastNachname;
@@ -294,9 +302,10 @@ async function updateBookingStep(
   let updateSuccess = false;
   try {
     logSafe(`[Action updateBookingStep - Step ${stepNumber}] Attempting to update mock DB for token "${bookingToken}" with data:`, bookingUpdates);
-    updateSuccess = updateMockBookingByToken(bookingToken, bookingUpdates);
+    // Replace with Firestore update in the future
+    updateSuccess = updateMockBookingByToken(bookingToken, bookingUpdates); 
   } catch (e: any) {
-    console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during updateMockBookingByToken for token "${bookingToken}":`, e.message, e.stack?.substring(0,500));
+    console.error(`[Action updateBookingStep - Step ${stepNumber}] CRITICAL: Error during DB update for token "${bookingToken}":`, e.message, e.stack?.substring(0,500));
     return {
       message: `Serverfehler: Buchung konnte nicht gespeichert werden (Code UDB-DBSAVE) für Schritt ${stepNumber}.`,
       errors: {global: ["Fehler beim Speichern der Buchung."]}, success: false, actionToken: serverActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1,
@@ -326,7 +335,7 @@ async function updateBookingStep(
 }
 
 // --- Exported Server Actions ---
-
+// Wrapper functions with top-level try-catch
 export async function submitGastStammdatenAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const serverActionToken = generateActionToken();
   console.log(`[Action submitGastStammdatenAction BEGIN] Token: "${bookingToken}". Action Token: ${serverActionToken}. Prev Step: ${prevState.currentStep}`);
@@ -361,17 +370,15 @@ export async function submitZahlungsinformationenAction(bookingToken: string, pr
   const serverActionToken = generateActionToken();
   console.log(`[Action submitZahlungsinformationenAction BEGIN] Token: "${bookingToken}". Action Token: ${serverActionToken}. Prev Step: ${prevState.currentStep}`);
   try {
-    // Der anzahlungsbetrag wird hier berechnet und als additionalDataToMerge übergeben, da er nicht direkt aus dem Formular kommt,
-    // aber für die Speicherung in guestSubmittedData benötigt wird, falls er dort noch nicht existiert oder aktualisiert werden soll.
     const booking = findMockBookingByToken(bookingToken);
     let anzahlungsbetrag = 0;
     if (booking?.price) {
         anzahlungsbetrag = parseFloat((booking.price * 0.3).toFixed(2));
     }
-    // Das Feld `zahlungsbetrag` wird nun auch direkt aus dem Formular gelesen, falls es dort (z.B. als hidden field) vorhanden ist.
-    // Das Zod-Schema `zahlungsinformationenSchema` wurde entsprechend angepasst.
-    // Wir können `additionalDataToMerge` hier leer lassen, wenn `zahlungsbetrag` vom Formular kommt.
-    return await updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, { zahlungsbetrag: anzahlungsbetrag }, serverActionToken);
+    // Pass anzahlungsbetrag explicitly if it's not part of the form,
+    // or ensure zahlungsinformationenSchema includes it and it's correctly parsed from formData.
+    // The schema now includes zahlungsbetrag, so no need for additionalDataToMerge here.
+    return await updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, {}, serverActionToken);
   } catch (error: any) {
     console.error(`[Action submitZahlungsinformationenAction CRITICAL UNCAUGHT ERROR] Token: "${bookingToken}". Error:`, error.message, error.stack?.substring(0, 800));
     return {
@@ -442,20 +449,20 @@ export async function createBookingAction(prevState: FormState | any, formData: 
       kleinkinder: bookingData.kleinkinder,
       alterKinder: bookingData.alterKinder || '',
       interneBemerkungen: bookingData.interneBemerkungen || '',
-      roomIdentifier: `${bookingData.zimmertyp || 'Zimmer'} (${bookingData.erwachsene} Erw.)`,
+      roomIdentifier: `${bookingData.zimmertyp || 'Zimmer'} (${bookingData.erwachsene} Erw.)`, // Example
       guestSubmittedData: {
         lastCompletedStep: -1,
       }
     };
-
-    addMockBooking(newBooking);
+    // Replace with Firestore add in the future
+    addMockBooking(newBooking); 
     console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
 
     revalidatePath("/admin/dashboard", "layout");
     revalidatePath(`/buchung/${newBookingToken}`, "layout"); 
 
     return {
-      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt.`,
+      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
       errors: null,
       success: true,
       actionToken: serverActionToken,
@@ -485,7 +492,8 @@ export async function deleteBookingsAction(bookingIds: string[]): Promise<{ succ
   }
 
   try {
-    const deleteSuccess = deleteMockBookingsByIds(bookingIds);
+    // Replace with Firestore delete in the future
+    const deleteSuccess = deleteMockBookingsByIds(bookingIds); 
 
     if (deleteSuccess) {
       revalidatePath("/admin/dashboard", "layout"); 

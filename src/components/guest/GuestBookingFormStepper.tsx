@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, ShieldCheck, Info, CreditCard, ShieldQuestion, FileText, BookUser, Landmark, Euro, Percent, CheckCircle2, WalletCards, User as UserIcon, FileIcon, MessageSquare } from "lucide-react";
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, ShieldCheck, Info, CreditCard, ShieldQuestion, FileText, BookUser, Landmark, Euro, Percent, CheckCircle2, WalletCards, User as UserIcon, FileIcon, MessageSquare, Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   submitGastStammdatenAction,
@@ -24,7 +24,7 @@ import { PradellLogo } from "@/components/shared/PradellLogo";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import Image from "next/image";
+import NextImage from "next/image"; // Renamed to avoid conflict with Lucide Image icon
 
 interface Step {
   id: string;
@@ -32,11 +32,11 @@ interface Step {
   Icon: React.ElementType; 
   StepIcon: React.ElementType; 
   Content: React.FC<StepContentProps>;
-  action: (bookingToken: string, prevState: FormState, formData: FormData) => Promise<FormState>;
+  action: (prevState: FormState, formData: FormData) => Promise<FormState>; // bookingToken bound via useActionState
 }
 
 interface StepContentProps {
-  bookingToken: string;
+  bookingToken: string; // Still needed for some internal logic or display
   bookingDetails?: Booking | null;
   guestData?: GuestSubmittedData | null; 
   formState: FormState;
@@ -48,7 +48,7 @@ export type FormState = {
   success?: boolean;
   actionToken?: string;
   updatedGuestData?: GuestSubmittedData | null;
-  currentStep?: number; 
+  currentStep?: number; // 0-indexed for consistency with array indexing
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined, updatedGuestData: null };
@@ -119,7 +119,7 @@ const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState }
         </div>
       </div>
       <div>
-        <Label htmlFor="geburtsdatum">Geburtsdatum (optional)</Label>
+        <Label htmlFor="geburtsdatum">Geburtsdatum</Label>
         <Input id="geburtsdatum" name="geburtsdatum" type="date" defaultValue={formatDateForInput(guestData?.geburtsdatum)} />
         {getErrorMessage("geburtsdatum", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("geburtsdatum", formState.errors)}</p>}
       </div>
@@ -147,19 +147,21 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
 
   useEffect(() => {
      const vorderseiteUrl = guestData?.hauptgastAusweisVorderseiteUrl;
-     if (vorderseiteUrl?.startsWith("mock-file-url:")) {
+     if (vorderseiteUrl?.includes('firebasestorage.googleapis.com')) {
+        const nameFromFirebase = vorderseiteUrl.split('/').pop()?.split('?')[0];
+        setFileNameVorderseite(nameFromFirebase ? decodeURIComponent(nameFromFirebase.split('_').slice(1).join('_') || nameFromFirebase) : "Bereits hochgeladen");
+     } else if (vorderseiteUrl?.startsWith("mock-file-url:")) { // Legacy for initial mock data if any
         setFileNameVorderseite(decodeURIComponent(vorderseiteUrl.substring("mock-file-url:".length)));
-     } else if (vorderseiteUrl) { // Any other truthy value implies something was there
-        setFileNameVorderseite("Bereits hochgeladen (vorheriger Schritt)");
      } else {
         setFileNameVorderseite("Keine Datei ausgewählt");
      }
 
      const rückseiteUrl = guestData?.hauptgastAusweisRückseiteUrl;
-     if (rückseiteUrl?.startsWith("mock-file-url:")) {
+      if (rückseiteUrl?.includes('firebasestorage.googleapis.com')) {
+        const nameFromFirebase = rückseiteUrl.split('/').pop()?.split('?')[0];
+        setFileNameRückseite(nameFromFirebase ? decodeURIComponent(nameFromFirebase.split('_').slice(1).join('_') || nameFromFirebase) : "Bereits hochgeladen");
+     } else if (rückseiteUrl?.startsWith("mock-file-url:")) {
         setFileNameRückseite(decodeURIComponent(rückseiteUrl.substring("mock-file-url:".length)));
-     } else if (rückseiteUrl) {
-        setFileNameRückseite("Bereits hochgeladen (vorheriger Schritt)");
      } else {
         setFileNameRückseite("Keine Datei ausgewählt");
      }
@@ -174,10 +176,12 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
       // Reset to filename from guestData if file selection is cancelled
       if (type === 'vorderseite') {
         const vUrl = guestData?.hauptgastAusweisVorderseiteUrl;
-        setFileNameVorderseite(vUrl?.startsWith("mock-file-url:") ? decodeURIComponent(vUrl.substring("mock-file-url:".length)) : (vUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
+        const nameFromFirebaseV = vUrl?.includes('firebasestorage.googleapis.com') ? (vUrl.split('/').pop()?.split('?')[0] ? decodeURIComponent(vUrl.split('/').pop()!.split('?')[0]!.split('_').slice(1).join('_') || vUrl.split('/').pop()!.split('?')[0]!) : "Bereits hochgeladen") : null;
+        setFileNameVorderseite(nameFromFirebaseV || (vUrl?.startsWith("mock-file-url:") ? decodeURIComponent(vUrl.substring("mock-file-url:".length)) : "Keine Datei ausgewählt"));
       } else {
         const rUrl = guestData?.hauptgastAusweisRückseiteUrl;
-        setFileNameRückseite(rUrl?.startsWith("mock-file-url:") ? decodeURIComponent(rUrl.substring("mock-file-url:".length)) : (rUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
+        const nameFromFirebaseR = rUrl?.includes('firebasestorage.googleapis.com') ? (rUrl.split('/').pop()?.split('?')[0] ? decodeURIComponent(rUrl.split('/').pop()!.split('?')[0]!.split('_').slice(1).join('_') || rUrl.split('/').pop()!.split('?')[0]!) : "Bereits hochgeladen") : null;
+        setFileNameRückseite(nameFromFirebaseR || (rUrl?.startsWith("mock-file-url:") ? decodeURIComponent(rUrl.substring("mock-file-url:".length)) : "Keine Datei ausgewählt"));
       }
     }
   };
@@ -234,10 +238,11 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
 
  useEffect(() => {
     const belegUrl = guestData?.zahlungsbelegUrl;
-    if (belegUrl?.startsWith("mock-file-url:")) {
+    if (belegUrl?.includes('firebasestorage.googleapis.com')) {
+        const nameFromFirebase = belegUrl.split('/').pop()?.split('?')[0];
+        setFileNameBeleg(nameFromFirebase ? decodeURIComponent(nameFromFirebase.split('_').slice(1).join('_') || nameFromFirebase) : "Bereits hochgeladen");
+    } else if (belegUrl?.startsWith("mock-file-url:")) { // Legacy for initial mock data
         setFileNameBeleg(decodeURIComponent(belegUrl.substring("mock-file-url:".length)));
-    } else if (belegUrl) {
-        setFileNameBeleg("Bereits hochgeladen (vorheriger Schritt)");
     } else {
         setFileNameBeleg("Keine Datei ausgewählt");
     }
@@ -249,7 +254,8 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
       setFileNameBeleg(file.name);
     } else {
       const belegUrl = guestData?.zahlungsbelegUrl;
-      setFileNameBeleg(belegUrl?.startsWith("mock-file-url:") ? decodeURIComponent(belegUrl.substring("mock-file-url:".length)) : (belegUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
+      const nameFromFirebase = belegUrl?.includes('firebasestorage.googleapis.com') ? (belegUrl.split('/').pop()?.split('?')[0] ? decodeURIComponent(belegUrl.split('/').pop()!.split('?')[0]!.split('_').slice(1).join('_') || belegUrl.split('/').pop()!.split('?')[0]!) : "Bereits hochgeladen") : null;
+      setFileNameBeleg(nameFromFirebase || (belegUrl?.startsWith("mock-file-url:") ? decodeURIComponent(belegUrl.substring("mock-file-url:".length)) : "Keine Datei ausgewählt"));
     }
   };
 
@@ -312,17 +318,45 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
 
   const renderDocumentLink = (url?: string, altText?: string, hint?: string) => {
     if (!url) return display(null);
-    if (url.startsWith("mock-file-url:")) { 
+
+    if (url.startsWith('https://firebasestorage.googleapis.com')) {
+        const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(url) || url.includes('image%2F');
+        const isPdf = /\.pdf/i.test(url) || url.includes('application%2Fpdf');
+        const fileNameFromUrl = url.split('/').pop()?.split('?')[0];
+        const decodedFileName = fileNameFromUrl ? decodeURIComponent(fileNameFromUrl.split('_').slice(1).join('_') || fileNameFromUrl) : 'Datei';
+
+
+        if (isImage) {
+            return (
+                <div className="flex flex-col items-start gap-1 mt-1">
+                    <NextImage src={url} alt={altText || 'Hochgeladenes Bild'} width={100} height={60} className="rounded border object-contain" data-ai-hint={hint || "document image"} />
+                    <Link href={url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                       {decodedFileName} (ansehen)
+                    </Link>
+                </div>
+            );
+        } else if (isPdf) {
+            return (
+                <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center" title={`PDF ansehen: ${decodedFileName}`}>
+                  <FileIcon className="w-4 h-4 mr-1 flex-shrink-0" /> {decodedFileName}
+                </Link>
+              );
+        } else { // Fallback for other Firebase Storage files
+             return (
+                <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center" title={`Datei ansehen: ${decodedFileName}`}>
+                    <FileIcon className="w-4 h-4 mr-1 flex-shrink-0" /> {decodedFileName}
+                </Link>
+            );
+        }
+    } else if (url.startsWith("mock-file-url:")) { // Legacy mock format
       const fileName = decodeURIComponent(url.substring("mock-file-url:".length));
       return (
-        <Link href="#" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center" title="Mock-Datei (nicht herunterladbar)">
-          <FileIcon className="w-4 h-4 mr-1 flex-shrink-0" /> {fileName}
-        </Link>
+        <span className="text-muted-foreground flex items-center">
+          <FileIcon className="w-4 h-4 mr-1 flex-shrink-0" /> {fileName} (Mock)
+        </span>
       );
     }
-    // Fallback for other types of URLs (e.g., old data URIs or direct links if we ever use them)
-    // Or if it's a generic link but not a specific document type we handle
-    return <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">Datei ansehen (Unbekanntes Format oder alter Link)</Link>;
+    return <span className="italic text-muted-foreground">Ungültige URL</span>;
   };
 
   return (
@@ -406,7 +440,7 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
 export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialBookingDetails }: { bookingToken: string, bookingDetails?: Booking | null }) {
   const { toast } = useToast();
   const lastProcessedActionTokenRef = useRef<string | undefined>(undefined);
-
+  
   const [latestGuestSubmittedData, setLatestGuestSubmittedData] = useState<GuestSubmittedData | null | undefined>(
     initialBookingDetails?.guestSubmittedData
   );
@@ -416,26 +450,25 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     console.log("[GuestBookingFormStepper useEffect initialBookingDetails] Initial guest data updated:", JSON.stringify(initialBookingDetails?.guestSubmittedData, null, 2).substring(0,200)+"...");
   }, [initialBookingDetails?.guestSubmittedData]);
 
+
   const steps: Step[] = useMemo(() => [
-    { id: "gastdaten", name: "Kontaktdaten", Icon: UserCircle, StepIcon: UserIcon, Content: GastStammdatenStep, action: submitGastStammdatenAction },
-    { id: "ausweis", name: "Ausweis", Icon: BookUser, StepIcon: BookUser, Content: AusweisdokumenteStep, action: submitAusweisdokumenteAction },
-    { id: "zahlung", name: "Zahlung", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction },
-    { id: "uebersicht", name: "Bestätigung", Icon: CheckCircle, StepIcon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction },
-  ], []);
+    { id: "gastdaten", name: "Kontaktdaten", Icon: UserCircle, StepIcon: UserIcon, Content: GastStammdatenStep, action: submitGastStammdatenAction.bind(null, bookingToken) },
+    { id: "ausweis", name: "Ausweis", Icon: BookUser, StepIcon: BookUser, Content: AusweisdokumenteStep, action: submitAusweisdokumenteAction.bind(null, bookingToken) },
+    { id: "zahlung", name: "Zahlung", Icon: CreditCard, StepIcon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction.bind(null, bookingToken) },
+    { id: "uebersicht", name: "Bestätigung", Icon: CheckCircle, StepIcon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction.bind(null, bookingToken) },
+  ], [bookingToken]);
 
   const initialStepFromDb = useMemo(() => {
     const lastStep = latestGuestSubmittedData?.lastCompletedStep; // 0-indexed
     const numSteps = steps.length;
 
-    if (typeof lastStep === 'number') {
-      if (lastStep >= numSteps - 1) { // If last completed step is the final step (e.g., step 3 for a 4-step form)
-        return numSteps; // Go to completed state
+    if (typeof lastStep === 'number' && lastStep > -1) {
+      if (lastStep >= numSteps - 1) { 
+        return numSteps; 
       }
-      if (lastStep > -1) { // If any step was completed
-        return lastStep + 1; // Go to the next step
-      }
+      return lastStep + 1; 
     }
-    return 0; // Default to the first step
+    return 0; 
   }, [latestGuestSubmittedData?.lastCompletedStep, steps]);
 
   const [currentStep, setCurrentStep] = useState(initialStepFromDb); 
@@ -450,12 +483,11 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
 
   const currentActionFn = useMemo(() => {
     if (currentStep >= 0 && currentStep < steps.length && steps[currentStep]?.action) {
-        return steps[currentStep].action.bind(null, bookingToken);
+        return steps[currentStep].action; // bookingToken is already bound
     }
     console.warn(`[GuestBookingFormStepper] Fallback action used. currentStep: ${currentStep}, steps.length: ${steps.length}`);
-    // Provide a safe fallback action
     return async (prevState: FormState, formData: FormData) => ({...initialFormState, message: "Interner Fehler: Ungültiger Schritt oder Aktion nicht definiert."}); 
-  }, [currentStep, steps, bookingToken]);
+  }, [currentStep, steps]);
 
   const [formState, formAction, isPending] = useActionState(currentActionFn, initialFormState);
 
@@ -479,19 +511,18 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         console.log("[GuestBookingFormStepper useEffect formState] Updating latestGuestSubmittedData with:", JSON.stringify(formState.updatedGuestData,null,2).substring(0, 300) + "...");
         setLatestGuestSubmittedData(formState.updatedGuestData);
       }
-       // Advance to the next step if not on the last step
       if (currentStep < steps.length - 1) {
         console.log(`[GuestBookingFormStepper useEffect formState] Advancing to next step: ${currentStep + 1}`);
         setCurrentStep(prev => prev + 1);
-      } else if (currentStep === steps.length -1) { // If it was the last step (confirmation)
+      } else if (currentStep === steps.length -1) { 
         console.log(`[GuestBookingFormStepper useEffect formState] Last step completed. Setting currentStep to steps.length to show completion screen.`);
-        setCurrentStep(steps.length); // Move to "completed" state
+        setCurrentStep(steps.length); 
       }
 
     } else if (formState.success && formState.actionToken && formState.actionToken === lastProcessedActionTokenRef.current) {
       console.log(`[GuestBookingFormStepper useEffect formState] Action with token ${formState.actionToken} was already processed. No state changes from this effect. currentStep: ${currentStep}`);
     }
-  }, [formState, toast, currentStep, steps, bookingToken]);
+  }, [formState, toast, currentStep, steps]);
 
 
   if (!initialBookingDetails) {
@@ -610,7 +641,8 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form action={formAction} key={`${currentStep}-${bookingToken}`} > 
+             {/* Key prop forces re-render of form and its state when step changes */}
+            <form action={formAction} key={`${currentStep}-${bookingToken}`} >
               <ActiveStepContent
                 bookingToken={bookingToken}
                 bookingDetails={initialBookingDetails}

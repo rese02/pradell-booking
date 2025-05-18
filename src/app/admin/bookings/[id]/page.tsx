@@ -4,18 +4,19 @@ import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { findMockBookingById } from "@/lib/mock-db";
+import { findMockBookingById } from "@/lib/mock-db"; // Will be replaced by Firestore later
 import { notFound } from "next/navigation";
 
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
   console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details for id: "${id}"`);
-  const booking = findMockBookingById(id);
+  // Replace with Firestore fetch in the future
+  const booking = findMockBookingById(id); 
   if (!booking) {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
   } else {
@@ -23,12 +24,6 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
         ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
         : { submitted: false };
     console.log(`[Page admin/bookings/[id]] Found booking for id ${id}. Guest Data Summary:`, guestDataSummary);
-    // Log URLs for debugging
-    if (booking.guestSubmittedData) {
-        console.log(`[Page admin/bookings/[id]] Ausweis Vorderseite URL: ${booking.guestSubmittedData.hauptgastAusweisVorderseiteUrl}`);
-        console.log(`[Page admin/bookings/[id]] Ausweis Rückseite URL: ${booking.guestSubmittedData.hauptgastAusweisRückseiteUrl}`);
-        console.log(`[Page admin/bookings/[id]] Zahlungsbeleg URL: ${booking.guestSubmittedData.zahlungsbelegUrl}`);
-    }
   }
   return booking || null;
 }
@@ -89,27 +84,64 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
-    if (value.startsWith("mock-file-url:")) { 
-      const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
-      displayValue = (
-         <div className="flex items-center gap-2 mt-1">
-            <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-            <span className="text-sm font-medium">{fileName}</span>
-             {/* In a real app, this Link would point to a download/view URL for the file stored in cloud storage */}
-             <Button asChild variant="outline" size="sm" disabled> {/* Disabled for mock */}
-                <Link href="#" title={`Datei: ${fileName} (Mock-Link)`}> 
-                    Ansehen (Mock)
-                </Link>
-            </Button>
-        </div>
-      );
-    } else if (isLink) { // If it's a generic link but not a specific document type we handle
+    if (value.startsWith('https://firebasestorage.googleapis.com')) {
+        const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(value) || value.includes('image%2F'); // Basic check
+        const isPdf = /\.pdf/i.test(value) || value.includes('application%2Fpdf'); // Basic check
+
+        const fileNameFromUrl = value.split('/').pop()?.split('?')[0];
+        const decodedFileName = fileNameFromUrl ? decodeURIComponent(fileNameFromUrl.split('_').slice(1).join('_') || fileNameFromUrl) : 'Datei';
+
+        if (isImage) {
+            displayValue = (
+                <div className="flex flex-col gap-2 mt-1">
+                    <Image src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
+                    <Button asChild variant="outline" size="sm" className="w-fit">
+                        <Link href={value} target="_blank" rel="noopener noreferrer">
+                            <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen
+                        </Link>
+                    </Button>
+                </div>
+            );
+        } else if (isPdf) {
+             displayValue = (
+                <div className="flex items-center gap-2 mt-1">
+                    <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm font-medium truncate max-w-xs">{decodedFileName}</span>
+                     <Button asChild variant="outline" size="sm">
+                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${decodedFileName}`}> 
+                            <FileText className="mr-2 h-4 w-4" /> PDF ansehen
+                        </Link>
+                    </Button>
+                </div>
+            );
+        } else { // Fallback for other Firebase Storage files
+             displayValue = (
+                <div className="flex items-center gap-2 mt-1">
+                    <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <span className="text-sm font-medium truncate max-w-xs">{decodedFileName}</span>
+                    <Button asChild variant="outline" size="sm">
+                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${decodedFileName}`}> 
+                           <Link2 className="mr-2 h-4 w-4" /> Datei ansehen
+                        </Link>
+                    </Button>
+                </div>
+            );
+        }
+    } else if (value.startsWith("mock-file-url:")) { // Legacy mock format
+        const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
+        displayValue = (
+            <div className="flex items-center gap-2 mt-1">
+                <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                <span className="text-sm font-medium">{fileName}</span>
+                <Button asChild variant="outline" size="sm" disabled>
+                    <Link href="#" title={`Datei: ${fileName} (Mock-Link)`}>Ansehen (Mock)</Link>
+                </Button>
+            </div>
+        );
+    } else if (isLink) {
         displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
     } else {
-      // Fallback for other string document URLs or unrecognized formats that might appear as data URIs from older data
-      // or if other mock formats are introduced.
-      // For actual data:image URIs, those would be handled by a more specific condition if we re-introduce direct image display.
-      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (URL oder Format nicht für direkte Vorschau geeignet)</span>;
+      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht für Vorschau geeignet)</span>;
     }
   } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
