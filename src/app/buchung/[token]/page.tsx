@@ -3,30 +3,24 @@ import { GuestBookingFormStepper } from "@/components/guest/GuestBookingFormStep
 import type { Booking } from "@/lib/definitions";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { findMockBookingByToken, getMockBookings } from "@/lib/mock-db"; 
+import { findBookingByTokenFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
 import { notFound } from "next/navigation";
 
 // Log module evaluation time
 console.log(`[Module /buchung/[token]/page.tsx] Module evaluated at ${new Date().toISOString()}`);
 
 async function getBookingByToken(token: string): Promise<Booking | null> {
-  console.log(`[Server getBookingByToken] Attempting to fetch booking for token: "${token}" at ${new Date().toISOString()}`);
-  
-  // This call to findMockBookingByToken() itself logs the internal state of the DB
-  const booking = findMockBookingByToken(token); 
+  console.log(`[Server getBookingByToken] Attempting to fetch booking from Firestore for token: "${token}" at ${new Date().toISOString()}`);
+  const booking = await findBookingByTokenFromFirestore(token);
 
   if (booking) {
-    console.log(`[Server getBookingByToken] Successfully found booking for token "${token}". Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
-    return booking; // Already a deep copy from findMockBookingByToken
+    console.log(`[Server getBookingByToken] Successfully found booking for token "${token}" from Firestore. Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
+    return booking;
   } else {
-    console.warn(`[Server getBookingByToken] No booking found for token "${token}" by findMockBookingByToken.`);
-    // Log current DB state again for direct comparison if booking not found
-    const currentBookingsInDbForDebug = getMockBookings(); // This also logs
-    console.warn(`[Server getBookingByToken] For missing token "${token}", current tokens in DB from getMockBookings(): [${currentBookingsInDbForDebug.map(b => b.bookingToken).join(', ')}]`);
+    console.warn(`[Server getBookingByToken] No booking found in Firestore for token "${token}".`);
     return null;
   }
 }
-
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
   console.log(`[Server GuestBookingPage] Rendering page for token: "${params.token}" at ${new Date().toISOString()}`);
@@ -39,7 +33,6 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   
   console.log(`[Server GuestBookingPage] Booking data retrieved for token "${params.token}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
 
-  // Check if guest data was already submitted and booking is confirmed
   if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
      console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is Confirmed and data submitted. Displaying confirmation.`);
      return (
@@ -75,7 +68,6 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
-  // If booking is pending guest information (and not yet fully submitted and confirmed)
   if (booking.status === "Pending Guest Information") {
     console.log(`[Server GuestBookingPage] Booking for token "${params.token}" is "Pending Guest Information". Rendering GuestBookingFormStepper.`);
     return (
@@ -83,7 +75,6 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
-  // Fallback for other statuses or unexpected scenarios
   console.warn(`[Server GuestBookingPage] Booking found for token "${params.token}", but status is "${booking.status}", which is not handled by specific UI. Displaying generic status message.`);
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg">

@@ -9,23 +9,21 @@ import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { findMockBookingById } from "@/lib/mock-db"; // Will be replaced by Firestore later
+import { findBookingByIdFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
 import { notFound } from "next/navigation";
 
-
 async function getBookingDetails(id: string): Promise<Booking | null> {
-  console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details for id: "${id}"`);
-  // Replace with Firestore fetch in the future
-  const booking = findMockBookingById(id); 
+  console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details from Firestore for id: "${id}"`);
+  const booking = await findBookingByIdFromFirestore(id);
   if (!booking) {
-    console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
+    console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found in Firestore.`);
   } else {
-    const guestDataSummary = booking.guestSubmittedData 
-        ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
+    const guestDataSummary = booking.guestSubmittedData
+        ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email }
         : { submitted: false };
-    console.log(`[Page admin/bookings/[id]] Found booking for id ${id}. Guest Data Summary:`, guestDataSummary);
+    console.log(`[Page admin/bookings/[id]] Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
   }
-  return booking || null;
+  return booking;
 }
 
 const formatDate = (dateString?: Date | string, includeTime = false) => {
@@ -87,9 +85,17 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     if (value.startsWith('https://firebasestorage.googleapis.com')) {
         const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(value) || value.includes('image%2F'); // Basic check
         const isPdf = /\.pdf/i.test(value) || value.includes('application%2Fpdf'); // Basic check
+        
+        // Extract filename from Firebase Storage URL
+        let fileNameFromUrl = 'Datei';
+        try {
+            const urlParts = value.split('%2F');
+            const lastPart = urlParts.pop();
+            if (lastPart) {
+                 fileNameFromUrl = decodeURIComponent(lastPart.split('?')[0] || 'Datei');
+            }
+        } catch (e) { console.error("Error parsing filename from URL", e); }
 
-        const fileNameFromUrl = value.split('/').pop()?.split('?')[0];
-        const decodedFileName = fileNameFromUrl ? decodeURIComponent(fileNameFromUrl.split('_').slice(1).join('_') || fileNameFromUrl) : 'Datei';
 
         if (isImage) {
             displayValue = (
@@ -97,7 +103,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
                     <Image src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
                     <Button asChild variant="outline" size="sm" className="w-fit">
                         <Link href={value} target="_blank" rel="noopener noreferrer">
-                            <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen
+                            <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen ({fileNameFromUrl})
                         </Link>
                     </Button>
                 </div>
@@ -106,9 +112,9 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
              displayValue = (
                 <div className="flex items-center gap-2 mt-1">
                     <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm font-medium truncate max-w-xs">{decodedFileName}</span>
+                    <span className="text-sm font-medium truncate max-w-xs">{fileNameFromUrl}</span>
                      <Button asChild variant="outline" size="sm">
-                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${decodedFileName}`}> 
+                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${fileNameFromUrl}`}> 
                             <FileText className="mr-2 h-4 w-4" /> PDF ansehen
                         </Link>
                     </Button>
@@ -118,24 +124,21 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
              displayValue = (
                 <div className="flex items-center gap-2 mt-1">
                     <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm font-medium truncate max-w-xs">{decodedFileName}</span>
+                    <span className="text-sm font-medium truncate max-w-xs">{fileNameFromUrl}</span>
                     <Button asChild variant="outline" size="sm">
-                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${decodedFileName}`}> 
+                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileNameFromUrl}`}> 
                            <Link2 className="mr-2 h-4 w-4" /> Datei ansehen
                         </Link>
                     </Button>
                 </div>
             );
         }
-    } else if (value.startsWith("mock-file-url:")) { // Legacy mock format
+    } else if (value.startsWith("mock-file-url:")) { // Legacy mock format or current dev state
         const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
         displayValue = (
             <div className="flex items-center gap-2 mt-1">
                 <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm font-medium">{fileName}</span>
-                <Button asChild variant="outline" size="sm" disabled>
-                    <Link href="#" title={`Datei: ${fileName} (Mock-Link)`}>Ansehen (Mock)</Link>
-                </Button>
+                <span className="text-sm font-medium">{fileName} (Mock)</span>
             </div>
         );
     } else if (isLink) {
@@ -148,7 +151,6 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   } else if (isBadge && typeof value === 'string') {
     displayValue = <Badge variant={badgeVariant || 'secondary'}>{value}</Badge>;
   }
-
 
   return (
     <div className="flex items-start space-x-3">
@@ -173,7 +175,6 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
 
   const guestData = booking.guestSubmittedData;
   const guestPortalLink = `/buchung/${booking.bookingToken}`;
-
 
   return (
     <div className="container mx-auto py-2">
@@ -202,7 +203,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
               <DetailItem icon={Home} label="Zimmer" value={booking.roomIdentifier} />
               <DetailItem icon={CalendarDays} label="Anreise" value={formatDate(booking.checkInDate)} />
               <DetailItem icon={CalendarDays} label="Abreise" value={formatDate(booking.checkOutDate)} />
-              <DetailItem icon={User} label="Status" value={booking.status} isBadge 
+              <DetailItem icon={User} label="Status" value={booking.status} isBadge
                 badgeVariant={
                   booking.status === "Confirmed" ? "default" :
                   booking.status === "Pending Guest Information" ? "secondary" :
@@ -234,8 +235,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
             </Card>
           )}
 
-
-          {guestData && (guestData.gastVorname || guestData.email || guestData.hauptgastAusweisVorderseiteUrl || guestData.zahlungsbelegUrl ) && ( 
+          {guestData && (guestData.gastVorname || guestData.email || guestData.hauptgastAusweisVorderseiteUrl || guestData.zahlungsbelegUrl ) && (
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>

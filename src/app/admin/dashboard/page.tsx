@@ -6,37 +6,31 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getMockBookings } from "@/lib/mock-db";
+import { getBookingsFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
 
-// This function would fetch data in a real app
 async function fetchBookings(): Promise<Booking[]> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 100));
-  // Return the potentially mutated MOCK_BOOKINGS_DB
-  // Sort by creation date, newest first, for better UX when adding new ones
-  const bookings = getMockBookings();
-  return [...bookings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  console.log("[AdminDashboardPage] Fetching bookings from Firestore...");
+  const bookings = await getBookingsFromFirestore();
+  console.log(`[AdminDashboardPage] Fetched ${bookings.length} bookings.`);
+  return bookings; // Already sorted by createdAt desc in getBookingsFromFirestore
 }
 
-async function getDashboardStats() {
-  // Simulate API delay and data fetching for stats
-  await new Promise(resolve => setTimeout(resolve, 100));
+async function getDashboardStats(bookings: Booking[]) {
   const today = new Date().setHours(0,0,0,0);
-  const bookings = getMockBookings(); // Use the centralized function
 
   const arrivalsToday = bookings.filter(b => {
-    const checkIn = new Date(b.checkInDate!).setHours(0,0,0,0);
-    return checkIn === today && (b.status === "Confirmed" || b.status === "Pending Guest Information");
+    const checkInDate = b.checkInDate ? new Date(b.checkInDate).setHours(0,0,0,0) : null;
+    return checkInDate === today && (b.status === "Confirmed" || b.status === "Pending Guest Information");
   }).length;
 
   const departuresToday = bookings.filter(b => {
-    const checkOut = new Date(b.checkOutDate!).setHours(0,0,0,0);
-    return checkOut === today && b.status === "Confirmed";
+    const checkOutDate = b.checkOutDate ? new Date(b.checkOutDate).setHours(0,0,0,0) : null;
+    return checkOutDate === today && b.status === "Confirmed";
   }).length;
   
   const newBookingsToday = bookings.filter(b => {
-    const createdAt = new Date(b.createdAt).setHours(0,0,0,0);
-    return createdAt === today;
+    const createdAtDate = b.createdAt ? new Date(b.createdAt).setHours(0,0,0,0) : null;
+    return createdAtDate === today;
   }).length;
 
   return {
@@ -45,7 +39,6 @@ async function getDashboardStats() {
     newBookingsToday,
   };
 }
-
 
 interface StatCardProps {
   title: string;
@@ -84,10 +77,9 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, descripti
   );
 };
 
-
 export default async function AdminDashboardPage() {
   const bookings = await fetchBookings();
-  const stats = await getDashboardStats();
+  const stats = await getDashboardStats(bookings);
 
   return (
     <TooltipProvider>
@@ -99,7 +91,7 @@ export default async function AdminDashboardPage() {
               Übersicht und Verwaltung aller Buchungen.
             </p>
           </div>
-          <CreateBookingDialog /> {/* "Neue Buchung" Button */}
+          <CreateBookingDialog />
         </div>
 
         <div className="grid gap-4 md:grid-cols-3 mb-6">
@@ -142,7 +134,7 @@ export default async function AdminDashboardPage() {
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                     <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
-                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden.</p>
+                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
                     <div className="mt-6">
                          <CreateBookingDialog />
                     </div>
