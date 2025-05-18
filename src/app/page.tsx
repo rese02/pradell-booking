@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { Logo } from "@/components/shared/Logo";
+import { Logo } from "@/components/shared/Logo"; // Using alias path
 
 export default function WelcomePage() {
   return (

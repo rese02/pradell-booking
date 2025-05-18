@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn } from "lucide-react";
-import { Logo } from "../../../components/shared/Logo"; // Changed to relative import
+import { Logo } from "@/components/shared/Logo"; // Using alias path
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 

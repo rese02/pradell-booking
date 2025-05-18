@@ -1,4 +1,3 @@
-
 "use client";
 
 import Link from "next/link";
@@ -13,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, UserCircle, Menu } from "lucide-react";
-import { Logo } from "@/components/shared/Logo";
+import { Logo } from "@/components/shared/Logo"; // Using alias path
 import { useSidebar } from "@/components/ui/sidebar"; 
 
 export function AdminHeader() {
@@ -27,14 +26,12 @@ export function AdminHeader() {
           <span className="sr-only">Toggle navigation</span>
         </Button>
       )}
-      {/* Removed Logo from the left side of the header */}
       
       <div className="flex-1">
         {/* Optional: Breadcrumbs or Search Bar can go here, or it acts as a spacer */}
       </div>
       
-      {/* Added Logo here, to the right, before the avatar */}
-      <div className="mr-4"> {/* Added margin for spacing */}
+      <div className="mr-4"> 
         <Logo />
       </div>
 
@@ -63,7 +60,6 @@ export function AdminHeader() {
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-             {/* In a real app, this would call a signOut function */}
             <Link href="/admin/login">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Abmelden</span>
