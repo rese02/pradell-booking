@@ -1,5 +1,4 @@
 
-
 export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation" | "Confirmed" | "Cancelled";
 
 export interface Mitreisender { 
@@ -34,33 +33,21 @@ export interface GuestSubmittedData {
   zahlungsdatum?: string; // ISO Format YYYY-MM-DD
   zahlungsbelegUrl?: string;
   
-  // Beibehaltene allgemeine Felder (werden in den neuen Schritten nicht mehr explizit als eigene Felder erfasst, aber die Struktur bleibt für Altdaten)
-  specialRequests?: string; 
-  
-  // Schritt 4 (ehemals 5): Übersicht & Bestätigung
+  // Schritt 4: Übersicht & Bestätigung
   agbAkzeptiert?: boolean; 
   datenschutzAkzeptiert?: boolean; 
   
   submittedAt?: Date | string; 
-  lastCompletedStep?: number; 
+  lastCompletedStep?: number; // 0-indexed
   actionToken?: string; 
+}
 
-  // Nicht mehr aktiv genutzte Felder aus älteren Strukturen (zur Referenz):
-  // fullName?: string; 
-  // guestFirstName?: string; // use gastVorname
-  // guestLastName?: string; // use gastNachname
-  // phone?: string; // use telefon
-  // alter?: number; // use geburtsdatum
-  // ausweisVorderseiteUrl?: string; // use hauptgastAusweisVorderseiteUrl
-  // ausweisRückseiteUrl?: string;  // use hauptgastAusweisRückseiteUrl
-  // addressLine1?: string; 
-  // addressLine2?: string; 
-  // city?: string; 
-  // postalCode?: string; 
-  // country?: string; 
-  // documentUrls?: string[]; // use spezifische URLs
-  // mitreisende?: Mitreisender[]; // aktuell nicht im Flow
-  // paymentAmountSelection?: 'downpayment' | 'full_amount'; // Nicht mehr als separater Schritt
+export interface RoomDetail {
+  zimmertyp: string;
+  erwachsene: number;
+  kinder?: number;
+  kleinkinder?: number;
+  alterKinder?: string;
 }
 
 export interface Booking {
@@ -75,11 +62,16 @@ export interface Booking {
   status: BookingStatus;
   
   verpflegung?: string;
+  
+  // Deprecated individual room fields, use 'rooms' array instead for new bookings
   zimmertyp?: string;
   erwachsene?: number;
   kinder?: number;
   kleinkinder?: number;
   alterKinder?: string;
+  
+  rooms?: RoomDetail[]; // Array to store details of all rooms
+
   interneBemerkungen?: string;
 
   guestSubmittedData?: GuestSubmittedData; 
@@ -105,30 +97,25 @@ export interface AusweisdokumenteFormData {
 }
 
 export interface ZahlungsinformationenFormData {
-  // anzahlungsbetrag wird automatisch kalkuliert
   zahlungsart: 'Überweisung';
   zahlungsdatum: string;
   zahlungsbeleg?: File | null;
+  zahlungsbetrag: number; // Added from hidden input
 }
 
 export interface UebersichtBestaetigungFormData {
-  agbAkzeptiert: boolean; // Wird als boolean interpretiert
-  datenschutzAkzeptiert: boolean; // Wird als boolean interpretiert
+  agbAkzeptiert: boolean; 
+  datenschutzAkzeptiert: boolean; 
 }
 
 
-// Alte Form Data Typen (zur Referenz / ggf. Entfernung)
-export interface CreateBookingFormData {
+export interface CreateBookingFormData { // This is the data shape from the form before Zod transform
   guestFirstName: string;
   guestLastName: string;
-  price: number;
+  price: string; // from input type=number, can be string
   checkInDate: string; 
   checkOutDate: string;
   verpflegung: string;
-  zimmertyp: string;
-  erwachsene: number;
-  kinder?: number; 
-  kleinkinder?: number; 
-  alterKinder?: string;
   interneBemerkungen?: string;
+  roomsData: string; // JSON string of RoomFormData[] (excluding client-side id)
 }

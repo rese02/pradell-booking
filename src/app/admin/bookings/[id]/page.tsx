@@ -1,7 +1,7 @@
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { Booking } from "@/lib/definitions";
+import type { Booking, RoomDetail } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon } from "lucide-react";
@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { findBookingByIdFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
+import { findBookingByIdFromFirestore } from "@/lib/mock-db"; 
 import { notFound } from "next/navigation";
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
@@ -22,6 +22,7 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
         ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email }
         : { submitted: false };
     console.log(`[Page admin/bookings/[id]] Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
+    console.log(`[Page admin/bookings/[id]] Full booking data:`, JSON.stringify(booking, null, 2).substring(0, 500) + "...");
   }
   return booking;
 }
@@ -83,18 +84,18 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
     if (value.startsWith('https://firebasestorage.googleapis.com')) {
-        const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(value) || value.includes('image%2F'); // Basic check
-        const isPdf = /\.pdf/i.test(value) || value.includes('application%2Fpdf'); // Basic check
+        const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(value) || value.includes('image%2F') || value.includes('image%2f'); // Basic check, case-insensitive
+        const isPdf = /\.pdf/i.test(value) || value.includes('application%2Fpdf') || value.includes('application%2fpdf'); // Basic check, case-insensitive
         
-        // Extract filename from Firebase Storage URL
         let fileNameFromUrl = 'Datei';
         try {
-            const urlParts = value.split('%2F');
-            const lastPart = urlParts.pop();
-            if (lastPart) {
-                 fileNameFromUrl = decodeURIComponent(lastPart.split('?')[0] || 'Datei');
+            const urlObj = new URL(value);
+            const pathParts = urlObj.pathname.split('%2F'); // Firebase uses %2F for /
+            const lastPartEncoded = pathParts.pop();
+            if (lastPartEncoded) {
+                 fileNameFromUrl = decodeURIComponent(lastPartEncoded);
             }
-        } catch (e) { console.error("Error parsing filename from URL", e); }
+        } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
 
 
         if (isImage) {
@@ -120,7 +121,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
                     </Button>
                 </div>
             );
-        } else { // Fallback for other Firebase Storage files
+        } else { 
              displayValue = (
                 <div className="flex items-center gap-2 mt-1">
                     <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
@@ -133,18 +134,18 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
                 </div>
             );
         }
-    } else if (value.startsWith("mock-file-url:")) { // Legacy mock format or current dev state
+    } else if (value.startsWith("mock-file-url:")) { 
         const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
         displayValue = (
             <div className="flex items-center gap-2 mt-1">
                 <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm font-medium">{fileName} (Mock)</span>
+                <span className="text-sm font-medium">{fileName} (Mock-Datei)</span>
             </div>
         );
-    } else if (isLink) {
+    } else if (isLink) { // Fallback for other links if not a storage URL
         displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
     } else {
-      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht für Vorschau geeignet)</span>;
+      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht für Vorschau geeignet oder ungültige URL)</span>;
     }
   } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
@@ -162,6 +163,33 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     </div>
   );
 };
+
+const RoomDetailsCard: React.FC<{ rooms: RoomDetail[] }> = ({ rooms }) => {
+  if (!rooms || rooms.length === 0) {
+    return null;
+  }
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Zimmerdetails</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {rooms.map((room, index) => (
+          <div key={index} className="p-3 border rounded-md bg-muted/30">
+            <h4 className="font-semibold text-md mb-2">Zimmer {index + 1}: {room.zimmertyp}</h4>
+            <div className="grid sm:grid-cols-2 gap-2 text-sm">
+              <p><strong>Erwachsene:</strong> {room.erwachsene}</p>
+              {typeof room.kinder === 'number' && <p><strong>Kinder (3+):</strong> {room.kinder}</p>}
+              {typeof room.kleinkinder === 'number' && <p><strong>Kleinkinder (0-2 J.):</strong> {room.kleinkinder}</p>}
+              {room.alterKinder && <p><strong>Alter Kinder:</strong> {room.alterKinder}</p>}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+};
+
 
 export default async function BookingDetailsPage({ params }: { params: { id: string } }) {
   const booking = await getBookingDetails(params.id);
@@ -200,7 +228,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <DetailItem icon={User} label="Gast (Initial)" value={`${booking.guestFirstName} ${booking.guestLastName}`} />
               <DetailItem icon={Euro} label="Preis" value={booking.price} isCurrency />
-              <DetailItem icon={Home} label="Zimmer" value={booking.roomIdentifier} />
+              {/* roomIdentifier for general display, detailed rooms will be in its own card if 'rooms' array exists */}
+              <DetailItem icon={Home} label="Zimmerübersicht" value={booking.roomIdentifier} />
               <DetailItem icon={CalendarDays} label="Anreise" value={formatDate(booking.checkInDate)} />
               <DetailItem icon={CalendarDays} label="Abreise" value={formatDate(booking.checkOutDate)} />
               <DetailItem icon={User} label="Status" value={booking.status} isBadge
@@ -210,10 +239,6 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                   booking.status === "Cancelled" ? "destructive" : "outline"
                 }
               />
-              <DetailItem icon={Users} label="Erwachsene" value={booking.erwachsene?.toString()} />
-              {typeof booking.kinder === 'number' && <DetailItem icon={Users} label="Kinder (3+)" value={booking.kinder.toString()} />}
-              {typeof booking.kleinkinder === 'number' && <DetailItem icon={Users} label="Kleinkinder (0-2 J.)" value={booking.kleinkinder.toString()} />}
-              {booking.alterKinder && <DetailItem icon={User} label="Alter Kinder" value={booking.alterKinder} />}
               <DetailItem icon={Home} label="Verpflegung" value={booking.verpflegung} />
               <DetailItem icon={Link2} label="Gast-Link" value={guestPortalLink} isLink />
             </CardContent>
@@ -223,6 +248,10 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
               <span>Letzte Aktualisierung: {formatDate(booking.updatedAt, true)}</span>
             </CardFooter>
           </Card>
+
+          {booking.rooms && booking.rooms.length > 0 && (
+            <RoomDetailsCard rooms={booking.rooms} />
+          )}
 
           {booking.interneBemerkungen && (
             <Card>
