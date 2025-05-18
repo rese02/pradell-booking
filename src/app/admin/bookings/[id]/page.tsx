@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
@@ -292,3 +292,4 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     </div>
   );
 }
+
