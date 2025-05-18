@@ -1,19 +1,22 @@
-import type { LucideProps } from 'lucide-react';
-import { Hotel } from 'lucide-react';
+import { cn } from "@/lib/utils";
+import Image from "next/image";
 
-export function Logo({ className, ...props }: LucideProps) {
+interface LogoProps {
+  className?: string;
+  // We can remove LucideProps if no longer directly passing them to an icon
+}
+
+export function Logo({ className }: LogoProps) {
   return (
-    <div className="flex items-center gap-2">
-      <Hotel className={cn("h-7 w-7 text-primary", className)} {...props} />
-      <span className="text-xl font-semibold text-foreground">Gastfreund Pro</span>
+    <div className={cn("flex items-center gap-2", className)}>
+      <Image
+        src="/logo.png" // Assumes your logo is named logo.png and in the public folder
+        alt="Gastfreund Pro Logo"
+        width={150} // Adjust width as needed
+        height={30} // Adjust height as needed to maintain aspect ratio and desired size
+        priority // Add priority if the logo is above the fold
+        className="h-auto" // maintain aspect ratio if only height or width is constrained by parent
+      />
     </div>
   );
 }
-
-// Minimalistic helper for className merging, as cn from lib/utils might not be available here if this file is moved.
-// For robustness, ensure cn is properly imported or defined if this component is used in varied contexts.
-// However, given standard project structure, `import { cn } from "@/lib/utils"` should work.
-// For now, assuming it's used where cn is available through such import.
-// If not, a local cn implementation would be: const cn = (...classes) => classes.filter(Boolean).join(' ');
-
-import { cn } from "@/lib/utils";
