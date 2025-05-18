@@ -89,36 +89,27 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
-    if (value.startsWith("data:image/")) { 
-      displayValue = (
-        <div className="mt-1 rounded-md border overflow-hidden relative w-40 h-24">
-          <Image src={value} alt={`${label} Vorschau`} layout="fill" objectFit="contain" data-ai-hint={documentHint || "document"}/>
-           <Button asChild size="sm" className="absolute bottom-1 right-1 opacity-80 hover:opacity-100 text-xs p-1 h-auto">
-                <Link href={value} target="_blank" rel="noopener noreferrer">
-                    <FileText className="mr-1 h-3 w-3"/>Ansehen
-                </Link>
-            </Button>
-        </div>
-      );
-    } else if (value.startsWith("mock-file-url:")) { 
+    if (value.startsWith("mock-file-url:")) { 
       const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
       displayValue = (
          <div className="flex items-center gap-2 mt-1">
             <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
             <span className="text-sm font-medium">{fileName}</span>
-            {/* In a real app, this Link would point to a download/view URL for the file stored in cloud storage */}
+             {/* In a real app, this Link would point to a download/view URL for the file stored in cloud storage */}
              <Button asChild variant="outline" size="sm" disabled> {/* Disabled for mock */}
                 <Link href="#" title={`Datei: ${fileName} (Mock-Link)`}> 
-                    Ansehen
+                    Ansehen (Mock)
                 </Link>
             </Button>
         </div>
       );
-    } else if (isLink) { 
+    } else if (isLink) { // If it's a generic link but not a specific document type we handle
         displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
     } else {
-      // Fallback for other string document URLs or unrecognized formats
-      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht erkannt)</span>;
+      // Fallback for other string document URLs or unrecognized formats that might appear as data URIs from older data
+      // or if other mock formats are introduced.
+      // For actual data:image URIs, those would be handled by a more specific condition if we re-introduce direct image display.
+      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (URL oder Format nicht für direkte Vorschau geeignet)</span>;
     }
   } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;

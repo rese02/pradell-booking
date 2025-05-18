@@ -48,6 +48,7 @@ export type FormState = {
   success?: boolean;
   actionToken?: string;
   updatedGuestData?: GuestSubmittedData | null;
+  currentStep?: number; 
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined, updatedGuestData: null };
@@ -143,76 +144,40 @@ const GastStammdatenStep: React.FC<StepContentProps> = ({ guestData, formState }
 const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState }) => {
   const [fileNameVorderseite, setFileNameVorderseite] = useState<string | null>(null);
   const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
-  const [previewVorderseite, setPreviewVorderseite] = useState<string | null>(guestData?.hauptgastAusweisVorderseiteUrl || null);
-  const [previewRückseite, setPreviewRückseite] = useState<string | null>(guestData?.hauptgastAusweisRückseiteUrl || null);
-
 
   useEffect(() => {
      const vorderseiteUrl = guestData?.hauptgastAusweisVorderseiteUrl;
-     if (vorderseiteUrl) {
-        if (vorderseiteUrl.startsWith("data:image")) {
-            setFileNameVorderseite("Bildvorschau unten");
-            setPreviewVorderseite(vorderseiteUrl);
-        } else if (vorderseiteUrl.startsWith("mock-file-url:")) {
-            setFileNameVorderseite(decodeURIComponent(vorderseiteUrl.substring("mock-file-url:".length)));
-            setPreviewVorderseite(null); // No direct preview for mock PDFs
-        } else {
-             setFileNameVorderseite("Bereits hochgeladen");
-             setPreviewVorderseite(null); // Or attempt to show if it's an image
-        }
+     if (vorderseiteUrl?.startsWith("mock-file-url:")) {
+        setFileNameVorderseite(decodeURIComponent(vorderseiteUrl.substring("mock-file-url:".length)));
+     } else if (vorderseiteUrl) { // Any other truthy value implies something was there
+        setFileNameVorderseite("Bereits hochgeladen (vorheriger Schritt)");
      } else {
         setFileNameVorderseite("Keine Datei ausgewählt");
-        setPreviewVorderseite(null);
      }
 
      const rückseiteUrl = guestData?.hauptgastAusweisRückseiteUrl;
-     if (rückseiteUrl) {
-        if (rückseiteUrl.startsWith("data:image")) {
-            setFileNameRückseite("Bildvorschau unten");
-            setPreviewRückseite(rückseiteUrl);
-        } else if (rückseiteUrl.startsWith("mock-file-url:")) {
-            setFileNameRückseite(decodeURIComponent(rückseiteUrl.substring("mock-file-url:".length)));
-            setPreviewRückseite(null);
-        } else {
-            setFileNameRückseite("Bereits hochgeladen");
-            setPreviewRückseite(null);
-        }
+     if (rückseiteUrl?.startsWith("mock-file-url:")) {
+        setFileNameRückseite(decodeURIComponent(rückseiteUrl.substring("mock-file-url:".length)));
+     } else if (rückseiteUrl) {
+        setFileNameRückseite("Bereits hochgeladen (vorheriger Schritt)");
      } else {
         setFileNameRückseite("Keine Datei ausgewählt");
-        setPreviewRückseite(null);
      }
   }, [guestData?.hauptgastAusweisVorderseiteUrl, guestData?.hauptgastAusweisRückseiteUrl]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, type: 'vorderseite' | 'rückseite') => {
     const file = event.target.files?.[0];
     if (file) {
-      if (type === 'vorderseite') {
-        setFileNameVorderseite(file.name);
-        if (file.type.startsWith("image/")) {
-          const reader = new FileReader();
-          reader.onloadend = () => setPreviewVorderseite(reader.result as string);
-          reader.readAsDataURL(file);
-        } else {
-          setPreviewVorderseite(null);
-        }
-      } else {
-        setFileNameRückseite(file.name);
-        if (file.type.startsWith("image/")) {
-          const reader = new FileReader();
-          reader.onloadend = () => setPreviewRückseite(reader.result as string);
-          reader.readAsDataURL(file);
-        } else {
-          setPreviewRückseite(null);
-        }
-      }
+      if (type === 'vorderseite') setFileNameVorderseite(file.name);
+      else setFileNameRückseite(file.name);
     } else {
+      // Reset to filename from guestData if file selection is cancelled
       if (type === 'vorderseite') {
-        setFileNameVorderseite(guestData?.hauptgastAusweisVorderseiteUrl ? (guestData.hauptgastAusweisVorderseiteUrl.startsWith("mock-file-url:") ? decodeURIComponent(guestData.hauptgastAusweisVorderseiteUrl.substring("mock-file-url:".length)) : "Bereits hochgeladen") : "Keine Datei ausgewählt");
-        setPreviewVorderseite(guestData?.hauptgastAusweisVorderseiteUrl?.startsWith("data:image") ? guestData.hauptgastAusweisVorderseiteUrl : null);
-
+        const vUrl = guestData?.hauptgastAusweisVorderseiteUrl;
+        setFileNameVorderseite(vUrl?.startsWith("mock-file-url:") ? decodeURIComponent(vUrl.substring("mock-file-url:".length)) : (vUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
       } else {
-        setFileNameRückseite(guestData?.hauptgastAusweisRückseiteUrl ? (guestData.hauptgastAusweisRückseiteUrl.startsWith("mock-file-url:") ? decodeURIComponent(guestData.hauptgastAusweisRückseiteUrl.substring("mock-file-url:".length)) : "Bereits hochgeladen") : "Keine Datei ausgewählt");
-        setPreviewRückseite(guestData?.hauptgastAusweisRückseiteUrl?.startsWith("data:image") ? guestData.hauptgastAusweisRückseiteUrl : null);
+        const rUrl = guestData?.hauptgastAusweisRückseiteUrl;
+        setFileNameRückseite(rUrl?.startsWith("mock-file-url:") ? decodeURIComponent(rUrl.substring("mock-file-url:".length)) : (rUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
       }
     }
   };
@@ -245,14 +210,6 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
             <Button asChild variant="outline" size="sm"><Label htmlFor="hauptgastAusweisVorderseite" className="cursor-pointer"><FileUp className="w-4 h-4 mr-2" /> Datei wählen</Label></Button>
             <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameVorderseite}</span>
           </div>
-          {previewVorderseite && previewVorderseite.startsWith("data:image/") && (
-            <div className="mt-2 rounded-md border overflow-hidden relative w-48 h-32">
-              <Image src={previewVorderseite} alt="Vorschau Vorderseite" layout="fill" objectFit="contain" data-ai-hint="identification document" />
-            </div>
-          )}
-          {guestData?.hauptgastAusweisVorderseiteUrl && guestData.hauptgastAusweisVorderseiteUrl.startsWith("mock-file-url:") && !previewVorderseite && (
-             <p className="text-xs text-muted-foreground mt-1 flex items-center"><FileIcon className="w-3 h-3 mr-1"/> {decodeURIComponent(guestData.hauptgastAusweisVorderseiteUrl.substring("mock-file-url:".length))}</p>
-           )}
           <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
           {getErrorMessage("hauptgastAusweisVorderseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisVorderseite", formState.errors)}</p>}
         </div>
@@ -263,14 +220,6 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
             <Button asChild variant="outline" size="sm"><Label htmlFor="hauptgastAusweisRückseite" className="cursor-pointer"><FileUp className="w-4 h-4 mr-2" /> Datei wählen</Label></Button>
             <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameRückseite}</span>
           </div>
-          {previewRückseite && previewRückseite.startsWith("data:image/") && (
-            <div className="mt-2 rounded-md border overflow-hidden relative w-48 h-32">
-              <Image src={previewRückseite} alt="Vorschau Rückseite" layout="fill" objectFit="contain" data-ai-hint="identification document"/>
-            </div>
-          )}
-           {guestData?.hauptgastAusweisRückseiteUrl && guestData.hauptgastAusweisRückseiteUrl.startsWith("mock-file-url:") && !previewRückseite &&(
-             <p className="text-xs text-muted-foreground mt-1 flex items-center"><FileIcon className="w-3 h-3 mr-1"/> {decodeURIComponent(guestData.hauptgastAusweisRückseiteUrl.substring("mock-file-url:".length))}</p>
-           )}
           <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF)</p>
           {getErrorMessage("hauptgastAusweisRückseite", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisRückseite", formState.errors)}</p>}
         </div>
@@ -282,25 +231,15 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
 // --- Step 3: Zahlungsinformationen ---
 const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails, guestData, formState }) => {
   const [fileNameBeleg, setFileNameBeleg] = useState<string | null>(null);
-  const [previewBeleg, setPreviewBeleg] = useState<string | null>(guestData?.zahlungsbelegUrl || null);
-
 
  useEffect(() => {
     const belegUrl = guestData?.zahlungsbelegUrl;
-    if (belegUrl) {
-        if (belegUrl.startsWith("data:image")) {
-            setFileNameBeleg("Bildvorschau unten");
-            setPreviewBeleg(belegUrl);
-        } else if (belegUrl.startsWith("mock-file-url:")) {
-            setFileNameBeleg(decodeURIComponent(belegUrl.substring("mock-file-url:".length)));
-            setPreviewBeleg(null); 
-        } else {
-            setFileNameBeleg("Bereits hochgeladen");
-            setPreviewBeleg(null);
-        }
+    if (belegUrl?.startsWith("mock-file-url:")) {
+        setFileNameBeleg(decodeURIComponent(belegUrl.substring("mock-file-url:".length)));
+    } else if (belegUrl) {
+        setFileNameBeleg("Bereits hochgeladen (vorheriger Schritt)");
     } else {
         setFileNameBeleg("Keine Datei ausgewählt");
-        setPreviewBeleg(null);
     }
   }, [guestData?.zahlungsbelegUrl]);
 
@@ -308,16 +247,9 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
     const file = event.target.files?.[0];
     if (file) {
       setFileNameBeleg(file.name);
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onloadend = () => setPreviewBeleg(reader.result as string);
-        reader.readAsDataURL(file);
-      } else {
-        setPreviewBeleg(null);
-      }
     } else {
-      setFileNameBeleg(guestData?.zahlungsbelegUrl ? (guestData.zahlungsbelegUrl.startsWith("mock-file-url:") ? decodeURIComponent(guestData.zahlungsbelegUrl.substring("mock-file-url:".length)) : "Bereits hochgeladen") : "Keine Datei ausgewählt");
-      setPreviewBeleg(guestData?.zahlungsbelegUrl?.startsWith("data:image") ? guestData.zahlungsbelegUrl : null);
+      const belegUrl = guestData?.zahlungsbelegUrl;
+      setFileNameBeleg(belegUrl?.startsWith("mock-file-url:") ? decodeURIComponent(belegUrl.substring("mock-file-url:".length)) : (belegUrl ? "Bereits hochgeladen" : "Keine Datei ausgewählt"));
     }
   };
 
@@ -361,14 +293,6 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
           <Button asChild variant="outline" size="sm"><Label htmlFor="zahlungsbeleg" className="cursor-pointer"><FileUp className="w-4 h-4 mr-2" /> Datei wählen</Label></Button>
           <span className="text-sm text-muted-foreground truncate max-w-xs">{fileNameBeleg}</span>
         </div>
-        {previewBeleg && previewBeleg.startsWith("data:image/") && (
-          <div className="mt-2 rounded-md border overflow-hidden relative w-48 h-32">
-            <Image src={previewBeleg} alt="Vorschau Zahlungsbeleg" layout="fill" objectFit="contain" data-ai-hint="payment proof"/>
-          </div>
-        )}
-        {guestData?.zahlungsbelegUrl && guestData.zahlungsbelegUrl.startsWith("mock-file-url:") && !previewBeleg &&(
-           <p className="text-xs text-muted-foreground mt-1 flex items-center"><FileIcon className="w-3 h-3 mr-1"/> {decodeURIComponent(guestData.zahlungsbelegUrl.substring("mock-file-url:".length))}</p>
-        )}
         <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF). Erst nach Upload und Validierung des Belegs wird die Buchung komplett bestätigt.</p>
         {getErrorMessage("zahlungsbeleg", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsbeleg", formState.errors)}</p>}
       </div>
@@ -388,13 +312,6 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
 
   const renderDocumentLink = (url?: string, altText?: string, hint?: string) => {
     if (!url) return display(null);
-    if (url.startsWith("data:image/")) {
-      return (
-        <div className="mt-1 rounded-md border overflow-hidden relative w-32 h-20 sm:w-40 sm:h-24">
-          <Image src={url} alt={altText || "Dokumentenvorschau"} layout="fill" objectFit="contain" data-ai-hint={hint || "document"}/>
-        </div>
-      );
-    }
     if (url.startsWith("mock-file-url:")) { 
       const fileName = decodeURIComponent(url.substring("mock-file-url:".length));
       return (
@@ -403,7 +320,9 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ bookingDetails
         </Link>
       );
     }
-    return <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">Datei ansehen (Unbekanntes Format)</Link>;
+    // Fallback for other types of URLs (e.g., old data URIs or direct links if we ever use them)
+    // Or if it's a generic link but not a specific document type we handle
+    return <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">Datei ansehen (Unbekanntes Format oder alter Link)</Link>;
   };
 
   return (
@@ -509,14 +428,14 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     const numSteps = steps.length;
 
     if (typeof lastStep === 'number') {
-      if (lastStep >= numSteps - 1) { 
-        return numSteps; 
+      if (lastStep >= numSteps - 1) { // If last completed step is the final step (e.g., step 3 for a 4-step form)
+        return numSteps; // Go to completed state
       }
-      if (lastStep > -1) { 
-        return lastStep + 1; 
+      if (lastStep > -1) { // If any step was completed
+        return lastStep + 1; // Go to the next step
       }
     }
-    return 0; 
+    return 0; // Default to the first step
   }, [latestGuestSubmittedData?.lastCompletedStep, steps]);
 
   const [currentStep, setCurrentStep] = useState(initialStepFromDb); 
@@ -534,7 +453,8 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         return steps[currentStep].action.bind(null, bookingToken);
     }
     console.warn(`[GuestBookingFormStepper] Fallback action used. currentStep: ${currentStep}, steps.length: ${steps.length}`);
-    return async () => ({...initialFormState, message: "Interner Fehler: Ungültiger Schritt oder Aktion nicht definiert."}); 
+    // Provide a safe fallback action
+    return async (prevState: FormState, formData: FormData) => ({...initialFormState, message: "Interner Fehler: Ungültiger Schritt oder Aktion nicht definiert."}); 
   }, [currentStep, steps, bookingToken]);
 
   const [formState, formAction, isPending] = useActionState(currentActionFn, initialFormState);
@@ -559,6 +479,15 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         console.log("[GuestBookingFormStepper useEffect formState] Updating latestGuestSubmittedData with:", JSON.stringify(formState.updatedGuestData,null,2).substring(0, 300) + "...");
         setLatestGuestSubmittedData(formState.updatedGuestData);
       }
+       // Advance to the next step if not on the last step
+      if (currentStep < steps.length - 1) {
+        console.log(`[GuestBookingFormStepper useEffect formState] Advancing to next step: ${currentStep + 1}`);
+        setCurrentStep(prev => prev + 1);
+      } else if (currentStep === steps.length -1) { // If it was the last step (confirmation)
+        console.log(`[GuestBookingFormStepper useEffect formState] Last step completed. Setting currentStep to steps.length to show completion screen.`);
+        setCurrentStep(steps.length); // Move to "completed" state
+      }
+
     } else if (formState.success && formState.actionToken && formState.actionToken === lastProcessedActionTokenRef.current) {
       console.log(`[GuestBookingFormStepper useEffect formState] Action with token ${formState.actionToken} was already processed. No state changes from this effect. currentStep: ${currentStep}`);
     }
@@ -643,7 +572,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         <div className="mb-12">
           <ol className="flex items-center w-full">
             {steps.map((step, index) => {
-              const StepProgressIcon = steps[index]?.StepIcon || Info; 
+              const StepIconComponent = steps[index]?.StepIcon || Info; 
               return (
                 <li
                   key={step.id}
@@ -661,7 +590,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                         index === currentStep ? "bg-primary text-primary-foreground ring-4 ring-primary/30" :
                           "bg-muted text-muted-foreground border"
                     )}>
-                      {index < currentStep ? <Check className="w-5 h-5" /> : <StepProgressIcon className="w-5 h-5" />}
+                      {index < currentStep ? <Check className="w-5 h-5" /> : <StepIconComponent className="w-5 h-5" />}
                     </span>
                     <span className={cn("text-xs px-1", index <= currentStep ? "text-primary" : "text-muted-foreground")}>
                       {step.name}
