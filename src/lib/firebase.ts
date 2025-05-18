@@ -40,7 +40,7 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
 
   REQUIRED_ENV_VARS_CONFIG.forEach(configEntry => {
     const value = firebaseConfigValues[configEntry.key];
-    if (value) {
+    if (value && value.trim() !== "") {
       console.log(`[Firebase Init OK] ${configEntry.envVarName} for '${configEntry.key}': Value: '${value}'`);
     } else {
       console.error(`[Firebase Init FAIL] ${configEntry.envVarName} for '${configEntry.key}': NOT LOADED or EMPTY (Required)`);
@@ -58,10 +58,11 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
   if (allConfigVarsPresent) {
     if (getApps().length === 0) {
       try {
+        console.log("[Firebase Init Attempt] Initializing Firebase app with config:", firebaseConfigValues);
         app = initializeApp(firebaseConfigValues);
         console.log("[Firebase Init OK] Firebase app initialized successfully.");
       } catch (e: any) {
-        console.error("[Firebase Init FAIL] CRITICAL: Firebase app initialization FAILED.", e.message);
+        console.error("[Firebase Init FAIL] CRITICAL: Firebase app initialization FAILED.", e.message, e.stack?.substring(0,300));
         app = null;
       }
     } else {
@@ -74,7 +75,7 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
         db = getFirestore(app);
         console.log("[Firebase Init OK] Firestore initialized successfully.");
       } catch (e: any) {
-        console.error("[Firebase Init FAIL] CRITICAL: Firestore initialization FAILED.", e.message);
+        console.error("[Firebase Init FAIL] CRITICAL: Firestore initialization FAILED.", e.message, e.stack?.substring(0,300));
         db = null;
       }
 
@@ -82,27 +83,32 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
         storage = getStorage(app);
         console.log("[Firebase Init OK] Firebase Storage initialized successfully.");
       } catch (e: any) {
-        console.error("[Firebase Init FAIL] CRITICAL: Firebase Storage initialization FAILED.", e.message);
+        console.error("[Firebase Init FAIL] CRITICAL: Firebase Storage initialization FAILED.", e.message, e.stack?.substring(0,300));
         console.error("[Firebase Init INFO] Common cause for Storage init fail: 'storageBucket' in config is missing/incorrect, or Storage service not enabled in Firebase console.");
         storage = null;
       }
 
-      if (db && storage) { // Ensure both db and storage are initialized
+      if (app && db && storage) {
         firebaseInitializedCorrectly = true;
-        console.log("[Firebase Init OK] Firebase Core, Firestore, and Storage seem to be initialized and configured correctly.");
+        console.log("[Firebase Init OK] Firebase Core, Firestore, and Storage INITIALIZED AND CONFIGURED CORRECTLY.");
       } else {
         firebaseInitializedCorrectly = false;
-        console.error("[Firebase Init FAIL] Firebase app was initialized, but Firestore or Storage FAILED. Check specific errors above.");
+        let reason = [];
+        if (!app) reason.push("App not initialized");
+        if (!db) reason.push("Firestore (db) not initialized");
+        if (!storage) reason.push("Storage not initialized");
+        console.error(`[Firebase Init FAIL] One or more Firebase services failed to initialize. Reason(s): ${reason.join(', ')}. 'firebaseInitializedCorrectly' is FALSE.`);
       }
     } else {
       firebaseInitializedCorrectly = false;
-      console.error("[Firebase Init FAIL] Firebase app object is not available. Firestore and Storage cannot be initialized.");
+      console.error("[Firebase Init FAIL] Firebase app object is not available. Firestore and Storage cannot be initialized. 'firebaseInitializedCorrectly' is FALSE.");
     }
   } else {
     firebaseInitializedCorrectly = false;
-    console.error("CRITICAL: One or more required Firebase environment variables are missing. Firebase initialization SKIPPED.");
+    console.error("CRITICAL: One or more required Firebase environment variables are missing or empty. Firebase initialization SKIPPED. 'firebaseInitializedCorrectly' is FALSE.");
     console.error("Please ensure all NEXT_PUBLIC_FIREBASE_... variables are correctly set in your .env.local file, the file is saved, and the server is RESTARTED.");
   }
+  console.log(`[Firebase Init Final Status] firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}`);
   console.log("============================================================");
 }
 
