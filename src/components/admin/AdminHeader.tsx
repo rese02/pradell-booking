@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -13,10 +14,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, UserCircle, Menu } from "lucide-react";
 import { Logo } from "@/components/shared/Logo";
-import { useSidebar } from "@/components/ui/sidebar"; // Assuming sidebar provides a context hook
+import { useSidebar } from "@/components/ui/sidebar"; 
 
 export function AdminHeader() {
-  const { toggleSidebar, isMobile } = useSidebar(); // Or some other way to toggle mobile sidebar
+  const { toggleSidebar, isMobile } = useSidebar(); 
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-card px-4 sm:px-6">
@@ -26,12 +27,17 @@ export function AdminHeader() {
           <span className="sr-only">Toggle navigation</span>
         </Button>
       )}
-      {!isMobile && <div className="hidden md:block"><Logo /></div>}
+      {/* Removed Logo from the left side of the header */}
       
       <div className="flex-1">
-        {/* Optional: Breadcrumbs or Search Bar can go here */}
+        {/* Optional: Breadcrumbs or Search Bar can go here, or it acts as a spacer */}
       </div>
       
+      {/* Added Logo here, to the right, before the avatar */}
+      <div className="mr-4"> {/* Added margin for spacing */}
+        <Logo />
+      </div>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon" className="rounded-full">

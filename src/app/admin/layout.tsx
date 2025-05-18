@@ -12,21 +12,17 @@ import { AdminHeader } from "@/components/admin/AdminHeader";
 import { AdminSidebarNav } from "@/components/admin/AdminSidebarNav";
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
-import { Logo } from '@/components/shared/Logo';
+// Removed Logo import as it's no longer used in SidebarHeader
 import { Settings } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar variant="sidebar" collapsible="icon" side="left">
-        <SidebarHeader className="p-4">
-          {/* Logo visible when sidebar expanded, trigger when collapsed */}
-          <div className="group-data-[collapsible=icon]:hidden">
-             <Logo />
-          </div>
-          <div className="hidden group-data-[collapsible=icon]:block">
-            <SidebarTrigger/>
-          </div>
+        <SidebarHeader className="p-4 flex items-center justify-center group-data-[collapsible=icon]:justify-center">
+          {/* Logo removed from here */}
+          {/* SidebarTrigger is always visible and centered when sidebar is in icon mode */}
+          <SidebarTrigger/>
         </SidebarHeader>
         <SidebarContent>
           <AdminSidebarNav />
