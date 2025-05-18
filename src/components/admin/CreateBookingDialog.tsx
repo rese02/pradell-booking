@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createBookingAction } from "@/lib/actions";
-import type { RoomDetail } from "@/lib/definitions"; 
+import type { RoomDetail } from "@/lib/definitions";
 import { CalendarIcon as CalendarLucideIcon, Loader2, PlusCircle, User, Bed, Euro, Home, MessageSquare, Users, SmilePlus, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -64,13 +64,13 @@ export function CreateBookingDialog() {
   const { toast } = useToast();
   const [formKey, setFormKey] = useState(Date.now()); // To reset form on close/success
 
-  const initialRoom: RoomFormData = { 
-    id: Date.now().toString(), 
-    zimmertyp: 'standard', 
-    erwachsene: '1', 
-    kinder: '0', 
-    kleinkinder: '0', 
-    alterKinder: '' 
+  const initialRoom: RoomFormData = {
+    id: Date.now().toString(),
+    zimmertyp: 'standard',
+    erwachsene: '1',
+    kinder: '0',
+    kleinkinder: '0',
+    alterKinder: ''
   };
   const [rooms, setRooms] = useState<RoomFormData[]>([initialRoom]);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
@@ -80,7 +80,7 @@ export function CreateBookingDialog() {
     setDateRange(undefined);
     setFormKey(Date.now()); // Change key to force form re-render and reset internal state
   };
-  
+
   useEffect(() => {
     if (!open) { // Reset when dialog closes
         resetFormFields();
@@ -103,9 +103,9 @@ export function CreateBookingDialog() {
             </p>
           </div>
         ),
-        duration: 10000, 
+        duration: 10000,
       });
-      setOpen(false); 
+      setOpen(false);
       resetFormFields();
     } else if (state.message && state.errors && Object.keys(state.errors).length > 0) {
       let errorMessage = state.message || "Bitte überprüfen Sie die Eingabefelder.";
@@ -212,7 +212,7 @@ export function CreateBookingDialog() {
                       defaultMonth={dateRange?.from}
                       selected={dateRange}
                       onSelect={setDateRange}
-                      numberOfMonths={1} 
+                      numberOfMonths={1}
                       locale={de}
                     />
                   </PopoverContent>
@@ -252,7 +252,7 @@ export function CreateBookingDialog() {
                 {state.errors?.price && <p className="text-xs text-destructive mt-1">{state.errors.price[0]}</p>}
               </div>
             </div>
-            
+
             {state.errors?.roomsData && <p className="text-sm text-destructive mt-2 mb-2 px-1">{Array.isArray(state.errors.roomsData) ? state.errors.roomsData.join(', ') : String(state.errors.roomsData)}</p>}
 
 
