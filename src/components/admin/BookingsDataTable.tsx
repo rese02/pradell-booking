@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -13,9 +14,9 @@ import {
   type ColumnFiltersState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronDown, MoreHorizontal, Search, ListFilter } from "lucide-react"; // Changed Filter to ListFilter
+import { ArrowUpDown, ChevronDown, MoreHorizontal, Search, ListFilter, Trash2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -40,6 +41,20 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { deleteBookingsAction } from "@/lib/actions";
 
 // Helper to format date or return placeholder
 const formatDate = (dateString?: Date | string) => {
@@ -51,6 +66,14 @@ const formatDate = (dateString?: Date | string) => {
   }
 };
 
+const getFullBookingLink = (bookingToken: string) => {
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/buchung/${bookingToken}`;
+  }
+  // Fallback für serverseitiges Rendering oder wenn window nicht verfügbar ist
+  // Dies wird nicht für den Kopiervorgang verwendet, sondern nur als Fallback.
+  return `/buchung/${bookingToken}`; 
+};
 
 export const columns: ColumnDef<Booking>[] = [
   {
@@ -87,6 +110,10 @@ export const columns: ColumnDef<Booking>[] = [
       </Button>
     ),
     cell: ({ row }) => <div>{`${row.original.guestFirstName} ${row.original.guestLastName}`}</div>,
+    filterFn: (row, columnId, filterValue) => {
+        const guestName = `${row.original.guestFirstName} ${row.original.guestLastName}`;
+        return guestName.toLowerCase().includes(filterValue.toLowerCase());
+    }
   },
   {
     accessorKey: "roomIdentifier",
@@ -96,7 +123,7 @@ export const columns: ColumnDef<Booking>[] = [
     accessorKey: "price",
     header: () => <div className="text-right">Preis</div>,
     cell: ({ row }) => {
-      const amount = parseFloat(row.getValue("price"));
+      const amount = parseFloat(String(row.getValue("price")));
       const formatted = new Intl.NumberFormat("de-DE", {
         style: "currency",
         currency: "EUR",
@@ -128,15 +155,6 @@ export const columns: ColumnDef<Booking>[] = [
     },
   },
   {
-    accessorKey: "bookingToken",
-    header: "Gast-Link",
-    cell: ({ row }) => (
-      <Link href={`/buchung/${row.original.bookingToken}`} target="_blank" className="text-primary hover:underline text-xs">
-        Link öffnen
-      </Link>
-    )
-  },
-  {
     id: "actions",
     enableHiding: false,
     cell: ({ row }) => {
@@ -151,10 +169,16 @@ export const columns: ColumnDef<Booking>[] = [
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Aktionen</DropdownMenuLabel>
-            <DropdownMenuItem
-              onClick={() => navigator.clipboard.writeText(booking.id)}
+             <DropdownMenuItem
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  navigator.clipboard.writeText(getFullBookingLink(booking.bookingToken))
+                    .then(() => alert("Buchungslink in die Zwischenablage kopiert!"))
+                    .catch(err => console.error("Fehler beim Kopieren: ", err));
+                }
+              }}
             >
-              Buchungs-ID kopieren
+              Buchungslink kopieren
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
@@ -177,6 +201,10 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
+  const { toast } = useToast();
+
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
+  const [confirmationText, setConfirmationText] = React.useState("");
 
   const table = useReactTable({
     data,
@@ -197,9 +225,38 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
     },
   });
 
+  const handleDeleteSelected = async () => {
+    const selectedRows = table.getFilteredSelectedRowModel().rows;
+    if (selectedRows.length === 0) {
+      toast({ variant: "destructive", title: "Keine Buchungen ausgewählt" });
+      return;
+    }
+    if (confirmationText !== "LÖSCHEN") {
+      toast({ variant: "destructive", title: "Bestätigungstext falsch" });
+      return;
+    }
+
+    const bookingIdsToDelete = selectedRows.map(row => row.original.id);
+    
+    try {
+      const result = await deleteBookingsAction(bookingIdsToDelete);
+      if (result.success) {
+        toast({ title: "Erfolg", description: result.message });
+        table.resetRowSelection(); 
+      } else {
+        toast({ variant: "destructive", title: "Fehler", description: result.message });
+      }
+    } catch (error) {
+      toast({ variant: "destructive", title: "Fehler", description: "Ein unerwarteter Fehler ist aufgetreten." });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setConfirmationText("");
+    }
+  };
+
   return (
     <div className="w-full">
-      <div className="flex items-center py-4 gap-2">
+      <div className="flex items-center justify-between py-4 gap-2">
         <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
@@ -208,47 +265,91 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
             onChange={(event) =>
                 table.getColumn("guestFullName")?.setFilterValue(event.target.value)
             }
-            className="pl-10 max-w-sm" // Made input slightly wider
+            className="pl-10 max-w-sm" 
             />
         </div>
-        <Button variant="outline" size="sm">
-            <ListFilter className="mr-2 h-4 w-4" /> Buchungen ausrichten
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="ml-auto"> 
-              Spalten <ChevronDown className="ml-2 h-4 w-4" />
+        <div className="flex items-center gap-2">
+            {table.getFilteredSelectedRowModel().rows.length > 0 && (
+                <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => {
+                    setIsDeleteDialogOpen(open);
+                    if (!open) setConfirmationText(""); // Reset text on close
+                }}>
+                    <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {table.getFilteredSelectedRowModel().rows.length} Ausgewählte löschen
+                    </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Sind Sie absolut sicher?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                        Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die ausgewählten
+                        Buchungen dauerhaft gelöscht.
+                        Um fortzufahren, geben Sie bitte "LÖSCHEN" in das Textfeld ein.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="py-4 space-y-2">
+                        <Label htmlFor="deleteConfirm" className="text-sm font-medium">
+                        Bestätigungswort eingeben:
+                        </Label>
+                        <Input
+                        id="deleteConfirm"
+                        value={confirmationText}
+                        onChange={(e) => setConfirmationText(e.target.value)}
+                        placeholder="LÖSCHEN"
+                        />
+                    </div>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+                        <AlertDialogAction
+                        onClick={handleDeleteSelected}
+                        disabled={confirmationText !== "LÖSCHEN"}
+                        className={buttonVariants({ variant: "destructive" })}
+                        >
+                        Löschen
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            )}
+            <Button variant="outline" size="sm">
+                <ListFilter className="mr-2 h-4 w-4" /> Buchungen ausrichten
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {table
-              .getAllColumns()
-              .filter((column) => column.getCanHide())
-              .map((column) => {
-                // Custom labels for columns
-                let label = column.id;
-                if (column.id === "guestFullName") label = "Gast";
-                if (column.id === "roomIdentifier") label = "Zimmer";
-                if (column.id === "price") label = "Preis";
-                if (column.id === "checkInDate") label = "Anreise";
-                if (column.id === "checkOutDate") label = "Abreise";
-                if (column.id === "status") label = "Status";
-                if (column.id === "bookingToken") label = "Gast-Link";
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    className="capitalize"
-                    checked={column.getIsVisible()}
-                    onCheckedChange={(value) =>
-                      column.toggleVisibility(!!value)
-                    }
-                  >
-                    {label}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="ml-auto"> 
+                Spalten <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                {table
+                .getAllColumns()
+                .filter((column) => column.getCanHide())
+                .map((column) => {
+                    let label = column.id;
+                    if (column.id === "guestFullName") label = "Gast";
+                    if (column.id === "roomIdentifier") label = "Zimmer";
+                    if (column.id === "price") label = "Preis";
+                    if (column.id === "checkInDate") label = "Anreise";
+                    if (column.id === "checkOutDate") label = "Abreise";
+                    if (column.id === "status") label = "Status";
+                    return (
+                    <DropdownMenuCheckboxItem
+                        key={column.id}
+                        className="capitalize"
+                        checked={column.getIsVisible()}
+                        onCheckedChange={(value) =>
+                        column.toggleVisibility(!!value)
+                        }
+                    >
+                        {label}
+                    </DropdownMenuCheckboxItem>
+                    );
+                })}
+            </DropdownMenuContent>
+            </DropdownMenu>
+        </div>
       </div>
       <div className="rounded-md border">
         <Table>

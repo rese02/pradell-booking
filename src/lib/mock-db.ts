@@ -22,6 +22,10 @@ const INITIAL_MOCK_BOOKINGS: Booking[] = [
     alterKinder: '5',
     interneBemerkungen: 'Früher Check-in angefragt, falls möglich.',
     roomIdentifier: 'Doppelzimmer (Details folgen)',
+    guestSubmittedData: {
+        lastCompletedStep: -1,
+        email: "max@example.com", // Pre-fill for easier testing
+    }
   },
   {
     id: '2',
@@ -43,51 +47,48 @@ const INITIAL_MOCK_BOOKINGS: Booking[] = [
     interneBemerkungen: '',
     roomIdentifier: 'Suite (Details folgen)',
     guestSubmittedData: {
-      fullName: "Erika Musterfrau",
+      lastCompletedStep: 3, // All 4 steps (0,1,2,3) completed
+      anrede: 'Frau',
+      gastVorname: 'Erika',
+      gastNachname: 'Musterfrau',
+      geburtsdatum: '1980-05-20',
       email: "erika@example.com",
-      phone: "0123-4567890",
-      addressLine1: "Musterstraße 123",
-      city: "Musterstadt",
-      postalCode: "12345",
-      country: "Deutschland",
-      documentUrls: ["https://placehold.co/600x400.png?text=Ausweis-Vorderseite"],
-      specialRequests: "Bitte ein ruhiges Zimmer, wenn möglich mit Blick zum Garten. Anreise erfolgt spät.",
-      submittedAt: new Date('2024-08-18T14:55:00Z')
+      telefon: "0123-4567890",
+      hauptgastDokumenttyp: 'Personalausweis',
+      hauptgastAusweisVorderseiteUrl: 'https://placehold.co/600x400.png?text=Erika-Ausweis-V.pdf',
+      hauptgastAusweisRückseiteUrl: 'https://placehold.co/600x400.png?text=Erika-Ausweis-R.pdf',
+      zahlungsart: 'Überweisung',
+      zahlungsbetrag: 60.00, // 30% of 200
+      zahlungsdatum: '2024-08-17',
+      zahlungsbelegUrl: 'https://placehold.co/600x400.png?text=Erika-Zahlungsbeleg.jpg',
+      agbAkzeptiert: true,
+      datenschutzAkzeptiert: true,
+      submittedAt: new Date('2024-08-18T14:55:00Z').toISOString()
     }
   },
 ];
 
-// --- Global Mock DB Store for Development ---
-// Warning: Using global for mock DB is for dev only and has limitations.
-// It aims to provide a more consistent state across Next.js dev server reloads/contexts.
 
-const MOCK_DB_GLOBAL_KEY = Symbol.for('MOCK_BOOKINGS_DB_GASTFREUND_PRO');
+const MOCK_DB_GLOBAL_KEY = Symbol.for('MOCK_BOOKINGS_DB_GASTFREUND_PRO_V2');
 
 interface MockDbStore {
   bookings: Booking[];
   initialized: boolean;
 }
 
-// Ensure globalThis is defined (it should be in Node.js and modern browsers)
 const g = globalThis as any;
 
 function getGlobalDbStore(): MockDbStore {
-  if (!g[MOCK_DB_GLOBAL_KEY]) {
-    console.log(`[MockDB - GlobalStore] Initializing GLOBAL mock DB store with key ${MOCK_DB_GLOBAL_KEY.toString()} at ${new Date().toISOString()}`);
+  if (!g[MOCK_DB_GLOBAL_KEY] || !g[MOCK_DB_GLOBAL_KEY].initialized) {
+    console.log(`[MockDB - GlobalStore] Initializing/Re-initializing GLOBAL mock DB store with key ${MOCK_DB_GLOBAL_KEY.toString()} at ${new Date().toISOString()}`);
     g[MOCK_DB_GLOBAL_KEY] = {
-      bookings: JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS)), // Deep copy
+      bookings: JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS)), 
       initialized: true,
     };
-  } else if (!g[MOCK_DB_GLOBAL_KEY].initialized) {
-    // This case might happen if the symbol exists but data isn't fully set up (e.g. across some types of hot reloads)
-    console.log(`[MockDB - GlobalStore] Re-initializing data in existing GLOBAL mock DB store at ${new Date().toISOString()}`);
-    g[MOCK_DB_GLOBAL_KEY].bookings = JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS));
-    g[MOCK_DB_GLOBAL_KEY].initialized = true;
   }
   return g[MOCK_DB_GLOBAL_KEY];
 }
 
-// Initialize on module load
 getGlobalDbStore();
 console.log(`[MockDB - Module] Module evaluated. Global store should be initialized. Current global DB length: ${getGlobalDbStore().bookings.length} at ${new Date().toISOString()}`);
 
@@ -95,13 +96,13 @@ console.log(`[MockDB - Module] Module evaluated. Global store should be initiali
 export function getMockBookings(): Booking[] {
   const store = getGlobalDbStore();
   console.log(`[MockDB getMockBookings] Accessing global DB. Current length: ${store.bookings.length} at ${new Date().toISOString()}`);
-  return JSON.parse(JSON.stringify(store.bookings)); // Return a deep copy
+  return JSON.parse(JSON.stringify(store.bookings)); 
 }
 
 export function addMockBooking(booking: Booking): void {
   const store = getGlobalDbStore();
   console.log(`[MockDB addMockBooking] Attempting to add booking to global DB. Current global DB length: ${store.bookings.length} at ${new Date().toISOString()}`);
-  store.bookings.unshift(booking); // Add to the beginning
+  store.bookings.unshift(booking); 
   console.log(`[MockDB addMockBooking] Booking added with token ${booking.bookingToken}. New global DB length: ${store.bookings.length}. All tokens: ${store.bookings.map(b => b.bookingToken).join(', ')}`);
 }
 
@@ -112,7 +113,7 @@ export function findMockBookingByToken(token: string): Booking | undefined {
   const booking = store.bookings.find(b => b.bookingToken === token);
   if (booking) {
     console.log(`[MockDB findMockBookingByToken] Found booking for token "${token}" in global DB.`);
-    return JSON.parse(JSON.stringify(booking)); // Return a copy
+    return JSON.parse(JSON.stringify(booking)); 
   }
   console.warn(`[MockDB findMockBookingByToken] Booking with token "${token}" NOT FOUND in global DB.`);
   return undefined;
@@ -125,58 +126,60 @@ export function findMockBookingById(id: string): Booking | undefined {
   const booking = store.bookings.find(b => b.id === id);
    if (booking) {
     console.log(`[MockDB findMockBookingById] Found booking for ID "${id}" in global DB.`);
-    return JSON.parse(JSON.stringify(booking)); // Return a copy
+    return JSON.parse(JSON.stringify(booking)); 
   }
   console.warn(`[MockDB findMockBookingById] Booking with ID "${id}" NOT FOUND in global DB.`);
   return undefined;
 }
 
-export function updateMockBookingByToken(token: string, updates: Partial<Booking> | { guestSubmittedData: Partial<GuestSubmittedData>, documentUrls?: string[] }): boolean {
+export function updateMockBookingByToken(token: string, updates: Partial<Booking>): boolean {
   const store = getGlobalDbStore();
   console.log(`[MockDB updateMockBookingByToken] Attempting to update booking with token: "${token}" in global DB. DB length: ${store.bookings.length} at ${new Date().toISOString()}`);
   const bookingIndex = store.bookings.findIndex(b => b.bookingToken === token);
   if (bookingIndex !== -1) {
     const currentBooking = store.bookings[bookingIndex];
     
-    let updatedBookingData: Booking;
-
-    if ('guestSubmittedData' in updates && typeof updates.guestSubmittedData === 'object') {
-      const guestDataUpdates = updates.guestSubmittedData as Partial<GuestSubmittedData>;
-      const newGuestSubmittedData: GuestSubmittedData = { // Ensure newGuestSubmittedData is typed
+    const updatedBookingData: Booking = {
+      ...currentBooking,
+      ...updates, // Apply all updates directly
+      guestSubmittedData: { // Deep merge guestSubmittedData
         ...(currentBooking.guestSubmittedData || {}),
-        ...guestDataUpdates,
-      };
-      if ('documentUrls' in updates && Array.isArray(updates.documentUrls)) {
-        newGuestSubmittedData.documentUrls = updates.documentUrls;
-      } else if (guestDataUpdates.documentUrls) {
-        newGuestSubmittedData.documentUrls = guestDataUpdates.documentUrls;
-      }
-
-      updatedBookingData = {
-        ...currentBooking,
-        ...(updates as Partial<Booking>), // Apply other top-level updates if any
-        guestSubmittedData: newGuestSubmittedData,
-        updatedAt: new Date().toISOString(),
-      };
-    } else {
-      updatedBookingData = {
-        ...currentBooking,
-        ...(updates as Partial<Booking>),
-        updatedAt: new Date().toISOString(),
-      };
-    }
+        ...(updates.guestSubmittedData || {}),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    
     store.bookings[bookingIndex] = updatedBookingData;
     console.log(`[MockDB updateMockBookingByToken] Booking with token "${token}" updated successfully in global DB.`);
+    console.log(`[MockDB updateMockBookingByToken] Updated Guest Data for token ${token} (partial): ${JSON.stringify(updatedBookingData.guestSubmittedData, null, 2).substring(0, 300)}...`);
     return true;
   }
   console.warn(`[MockDB updateMockBookingByToken] Booking with token "${token}" not found for update in global DB.`);
   return false;
 }
 
+export function deleteMockBookingsByIds(ids: string[]): boolean {
+  const store = getGlobalDbStore();
+  const initialLength = store.bookings.length;
+  console.log(`[MockDB deleteMockBookingsByIds] Attempting to delete IDs: [${ids.join(', ')}] from global DB. Current length: ${initialLength}`);
+  
+  store.bookings = store.bookings.filter(booking => !ids.includes(booking.id));
+  
+  const finalLength = store.bookings.length;
+  const numDeleted = initialLength - finalLength;
+
+  if (numDeleted > 0) {
+    console.log(`[MockDB deleteMockBookingsByIds] Successfully deleted ${numDeleted} booking(s). New global DB length: ${finalLength}. Remaining tokens: ${store.bookings.map(b => b.bookingToken).join(', ')}`);
+  } else {
+    console.warn(`[MockDB deleteMockBookingsByIds] No bookings found with the provided IDs to delete. IDs: [${ids.join(', ')}]. DB length unchanged: ${finalLength}`);
+  }
+  return true; 
+}
+
 export function resetMockDb(): void {
   const store = getGlobalDbStore();
   console.log(`[MockDB resetMockDb] Resetting GLOBAL mock DB to initial state at ${new Date().toISOString()}.`);
   store.bookings = JSON.parse(JSON.stringify(INITIAL_MOCK_BOOKINGS));
-  store.initialized = true; // Ensure initialized flag is set
+  store.initialized = true; 
   console.log(`[MockDB resetMockDb] Global DB reset. New length: ${store.bookings.length}`);
 }
