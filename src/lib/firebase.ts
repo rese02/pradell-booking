@@ -5,13 +5,13 @@ import { getFirestore, type Firestore } from "firebase/firestore";
 import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 // Explicitly list required environment variables for Firebase config
-const REQUIRED_ENV_VARS_CONFIG: { key: keyof ReturnType<typeof getFirebaseConfigValues>; envVarName: string }[] = [
-  { key: "apiKey", envVarName: "NEXT_PUBLIC_FIREBASE_API_KEY" },
-  { key: "authDomain", envVarName: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN" },
-  { key: "projectId", envVarName: "NEXT_PUBLIC_FIREBASE_PROJECT_ID" },
-  { key: "storageBucket", envVarName: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET" },
-  { key: "messagingSenderId", envVarName: "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID" },
-  { key: "appId", envVarName: "NEXT_PUBLIC_FIREBASE_APP_ID" },
+const REQUIRED_ENV_VARS_CONFIG: { key: keyof ReturnType<typeof getFirebaseConfigValues>; envVarName: string; isCritical: boolean }[] = [
+  { key: "apiKey", envVarName: "NEXT_PUBLIC_FIREBASE_API_KEY", isCritical: true },
+  { key: "authDomain", envVarName: "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN", isCritical: true },
+  { key: "projectId", envVarName: "NEXT_PUBLIC_FIREBASE_PROJECT_ID", isCritical: true },
+  { key: "storageBucket", envVarName: "NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET", isCritical: true },
+  { key: "messagingSenderId", envVarName: "NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID", isCritical: true },
+  { key: "appId", envVarName: "NEXT_PUBLIC_FIREBASE_APP_ID", isCritical: true },
 ];
 
 function getFirebaseConfigValues() {
@@ -29,33 +29,35 @@ function getFirebaseConfigValues() {
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
-let firebaseInitializedCorrectly = false;
+let firebaseInitializedCorrectly = false; // Default to false
 
 if (typeof window === 'undefined') { // Log only on server-side during initialization
   console.log("============================================================");
   console.log("Firebase Initialization Configuration Check (Server-Side):");
 
   const firebaseConfigValues = getFirebaseConfigValues();
-  let allConfigVarsPresent = true;
+  let allCriticalConfigVarsPresent = true;
+  const missingCriticalVars: string[] = [];
 
   REQUIRED_ENV_VARS_CONFIG.forEach(configEntry => {
     const value = firebaseConfigValues[configEntry.key];
-    if (value && value.trim() !== "") {
-      console.log(`[Firebase Init OK] ${configEntry.envVarName} for '${configEntry.key}': Value: '${value}'`);
-    } else {
-      console.error(`[Firebase Init FAIL] ${configEntry.envVarName} for '${configEntry.key}': NOT LOADED or EMPTY (Required)`);
-      allConfigVarsPresent = false;
+    const status = (value && value.trim() !== "") ? `Value: '${value}'` : "NOT LOADED or EMPTY";
+    console.log(`[Firebase Init Check] ${configEntry.envVarName} for '${configEntry.key}': ${status}${configEntry.isCritical ? ' (Required)' : ' (Optional)'}`);
+    if (configEntry.isCritical && (!value || value.trim() === "")) {
+      allCriticalConfigVarsPresent = false;
+      missingCriticalVars.push(configEntry.envVarName);
     }
   });
 
-  if (firebaseConfigValues.measurementId) {
-    console.log(`[Firebase Init OK] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': Value: '${firebaseConfigValues.measurementId}' (Optional)`);
+  const measurementIdValue = firebaseConfigValues.measurementId;
+  if (measurementIdValue && measurementIdValue.trim() !== "") {
+    console.log(`[Firebase Init Check] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': Value: '${measurementIdValue}' (Optional)`);
   } else {
-    console.log(`[Firebase Init INFO] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': Not set (Optional)`);
+    console.log(`[Firebase Init Check] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': Not set or empty (Optional)`);
   }
   console.log("------------------------------------------------------------");
 
-  if (allConfigVarsPresent) {
+  if (allCriticalConfigVarsPresent) {
     if (getApps().length === 0) {
       try {
         console.log("[Firebase Init Attempt] Initializing Firebase app with config:", firebaseConfigValues);
@@ -71,32 +73,37 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
     }
 
     if (app) {
+      let dbInitSuccess = false;
+      let storageInitSuccess = false;
       try {
+        console.log("[Firebase Init Attempt] Getting Firestore instance...");
         db = getFirestore(app);
         console.log("[Firebase Init OK] Firestore initialized successfully.");
+        dbInitSuccess = true;
       } catch (e: any) {
         console.error("[Firebase Init FAIL] CRITICAL: Firestore initialization FAILED.", e.message, e.stack?.substring(0,300));
         db = null;
       }
 
       try {
+        console.log("[Firebase Init Attempt] Getting Firebase Storage instance...");
         storage = getStorage(app);
         console.log("[Firebase Init OK] Firebase Storage initialized successfully.");
+        storageInitSuccess = true;
       } catch (e: any) {
         console.error("[Firebase Init FAIL] CRITICAL: Firebase Storage initialization FAILED.", e.message, e.stack?.substring(0,300));
         console.error("[Firebase Init INFO] Common cause for Storage init fail: 'storageBucket' in config is missing/incorrect, or Storage service not enabled in Firebase console.");
         storage = null;
       }
 
-      if (app && db && storage) {
+      if (dbInitSuccess && storageInitSuccess) { // app is already confirmed to be non-null here
         firebaseInitializedCorrectly = true;
         console.log("[Firebase Init OK] Firebase Core, Firestore, and Storage INITIALIZED AND CONFIGURED CORRECTLY.");
       } else {
         firebaseInitializedCorrectly = false;
         let reason = [];
-        if (!app) reason.push("App not initialized");
-        if (!db) reason.push("Firestore (db) not initialized");
-        if (!storage) reason.push("Storage not initialized");
+        if (!dbInitSuccess) reason.push("Firestore (db) not initialized");
+        if (!storageInitSuccess) reason.push("Storage not initialized");
         console.error(`[Firebase Init FAIL] One or more Firebase services failed to initialize. Reason(s): ${reason.join(', ')}. 'firebaseInitializedCorrectly' is FALSE.`);
       }
     } else {
@@ -105,7 +112,7 @@ if (typeof window === 'undefined') { // Log only on server-side during initializ
     }
   } else {
     firebaseInitializedCorrectly = false;
-    console.error("CRITICAL: One or more required Firebase environment variables are missing or empty. Firebase initialization SKIPPED. 'firebaseInitializedCorrectly' is FALSE.");
+    console.error(`CRITICAL: One or more required Firebase environment variables are missing or empty: ${missingCriticalVars.join(', ')}. Firebase initialization SKIPPED. 'firebaseInitializedCorrectly' is FALSE.`);
     console.error("Please ensure all NEXT_PUBLIC_FIREBASE_... variables are correctly set in your .env.local file, the file is saved, and the server is RESTARTED.");
   }
   console.log(`[Firebase Init Final Status] firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}`);
