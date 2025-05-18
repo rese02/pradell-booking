@@ -77,7 +77,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   
   if (value === null || typeof value === 'undefined' || value === "") {
      if (typeof value === 'boolean' && value === false) {
-        // Allow 'false' boolean to be displayed as "Nein" or similar if needed
+        // Allow 'false' boolean to be displayed as "Nein"
      } else {
         return null;
      }
@@ -104,7 +104,8 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
       const fileName = decodeURIComponent(value.substring("mock-pdf-url:".length));
       displayValue = (
         <Button asChild variant="outline" size="sm">
-          <Link href="#" target="_blank" rel="noopener noreferrer"> {/* In real app, point to actual PDF URL */}
+          {/* In a real app, this link would point to the actual PDF download/view URL */}
+          <Link href="#" target="_blank" rel="noopener noreferrer" title={`PDF: ${fileName} (Mock-Link)`}>
             <FileIcon className="mr-2 h-4 w-4"/> {fileName}
           </Link>
         </Button>
@@ -233,8 +234,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 
                 {(guestData.hauptgastDokumenttyp || guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
                   <>
-                    <Separator />
-                    <h3 className="font-semibold text-lg mt-4 flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
+                    <Separator className="my-4" />
+                    <h3 className="font-semibold text-lg flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <DetailItem icon={Briefcase} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
                         <DetailItem icon={FileText} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification document front"/>
@@ -245,8 +246,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
 
                 {(guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
                     <>
-                        <Separator />
-                        <h3 className="font-semibold text-lg mt-4 flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
+                        <Separator className="my-4" />
+                        <h3 className="font-semibold text-lg flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
                         <div className="grid gap-4 sm:grid-cols-2">
                             <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
                             <DetailItem icon={Euro} label="Anzahlung (30%)" value={guestData.zahlungsbetrag} isCurrency/>
@@ -258,8 +259,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 
                 {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
                     <>
-                        <Separator />
-                        <h3 className="font-semibold text-lg mt-4 flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
+                        <Separator className="my-4" />
+                        <h3 className="font-semibold text-lg flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
                         <div className="grid gap-4 sm:grid-cols-2">
                            <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert} />
                            <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert} />
