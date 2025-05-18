@@ -36,7 +36,9 @@ const createBookingSchema = z.object({
 });
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ACCEPTED_FILE_TYPES = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
+const ACCEPTED_PDF_TYPES = ["application/pdf"];
+const ACCEPTED_FILE_TYPES = [...ACCEPTED_IMAGE_TYPES, ...ACCEPTED_PDF_TYPES];
 
 const fileSchema = z.instanceof(File).optional().nullable()
   .refine((file) => !file || file.size === 0 || file.size <= MAX_FILE_SIZE, `Maximale Dateigröße ist 10MB.`)
@@ -52,7 +54,7 @@ const gastStammdatenSchema = z.object({
   gastVorname: z.string().min(1, "Vorname ist erforderlich."),
   gastNachname: z.string().min(1, "Nachname ist erforderlich."),
   geburtsdatum: z.string().optional().refine(val => {
-    if (!val) return true; // Optional, so empty is fine
+    if (!val) return true; 
     const date = new Date(val);
     return !isNaN(date.getTime());
   }, { message: "Ungültiges Geburtsdatum." }),
@@ -72,6 +74,7 @@ const zahlungsinformationenSchema = z.object({
     message: "Ungültiges Zahlungsdatum."
   }),
   zahlungsbeleg: fileSchema.refine(file => !!file && file.size > 0, { message: "Zahlungsbeleg ist erforderlich."}),
+  zahlungsbetrag: z.coerce.number(), // Wird vom Client mitgeschickt, aber serverseitig kalkuliert/validiert
 });
 
 const uebersichtBestaetigungSchema = z.object({
@@ -162,19 +165,33 @@ export async function createBookingAction(prevState: any, formData: FormData) {
   }
 }
 
-// Hilfsfunktion für die Aktualisierung der Schritte im Gästebuchungsformular
+type GuestSubmittedDataAsFormData = Omit<GuestSubmittedData, 
+  'hauptgastAusweisVorderseiteUrl' | 
+  'hauptgastAusweisRückseiteUrl' | 
+  'zahlungsbelegUrl' |
+  'agbAkzeptiert' | // Diese kommen als "on" oder undefined
+  'datenschutzAkzeptiert'
+> & {
+  hauptgastAusweisVorderseite?: File | null;
+  hauptgastAusweisRückseite?: File | null;
+  zahlungsbeleg?: File | null;
+  agbAkzeptiert?: "on";
+  datenschutzAkzeptiert?: "on";
+};
+
+
 async function updateBookingStep(
   bookingToken: string,
   stepNumber: number,
   actionSchema: z.ZodType<any, any>,
   formData: FormData,
-  additionalDataToMerge?: Partial<GuestSubmittedData> // Für serverseitig kalkulierte Daten
+  additionalDataToMerge?: Partial<GuestSubmittedData> 
 ) {
   const rawFormData = Object.fromEntries(formData.entries());
   console.log(`[Action updateBookingStep - Step ${stepNumber}] For token: ${bookingToken}. Raw FormData:`, rawFormData);
 
   const validatedFields = actionSchema.safeParse(rawFormData);
-  const clientActionToken = formData.get("currentActionToken") as string | undefined;
+  const clientActionToken = formData.get("currentActionToken") as string | undefined; // This is not standard for useActionState
   const newServerActionToken = generateActionToken();
 
   if (!validatedFields.success) {
@@ -183,53 +200,74 @@ async function updateBookingStep(
       errors: validatedFields.error.flatten().fieldErrors,
       message: `Fehler bei der Validierung für Schritt ${stepNumber}.`,
       success: false,
-      actionToken: clientActionToken, // Behalte Client-Token bei Fehler, um Re-Submit zu ermöglichen/verfolgen
+      actionToken: newServerActionToken, // Send new token even on validation failure for client tracking
       updatedGuestData: null,
     };
   }
   
-  const dataFromForm = validatedFields.data;
+  const dataFromForm = validatedFields.data as GuestSubmittedDataAsFormData; // Cast to include File types for TS
   console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated data from form:`, dataFromForm);
 
   try {
     const booking = findMockBookingByToken(bookingToken);
     if (!booking) {
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] Booking not found for token: ${bookingToken}`);
-      return { message: "Buchung nicht gefunden.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
+      return { message: "Buchung nicht gefunden.", errors: null, success: false, actionToken: newServerActionToken, updatedGuestData: null };
     }
 
     const currentGuestData = booking.guestSubmittedData || {};
     
-    // Merge-Strategie: Aktuelle Daten + Serverseitig berechnete Daten + Formulardaten für diesen Schritt
-    const updatedGuestData: GuestSubmittedData = {
+    let updatedGuestData: GuestSubmittedData = {
       ...currentGuestData,
       ...additionalDataToMerge, 
-      ...dataFromForm,       
+      ...dataFromForm, // This will initially overwrite file fields with File objects
       lastCompletedStep: Math.max(currentGuestData.lastCompletedStep || 0, stepNumber),
-      submittedAt: new Date().toISOString(),
+      // submittedAt will be set at the very end (confirmation step)
     };
-     console.log(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data (before file handling):`, updatedGuestData);
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data (before file handling):`, updatedGuestData);
 
+    // Handle File Uploads (Simulated)
+    const fileFields: { formDataKey: keyof GuestSubmittedDataAsFormData; urlKey: keyof GuestSubmittedData }[] = [
+      { formDataKey: 'hauptgastAusweisVorderseite', urlKey: 'hauptgastAusweisVorderseiteUrl' },
+      { formDataKey: 'hauptgastAusweisRückseite', urlKey: 'hauptgastAusweisRückseiteUrl' },
+      { formDataKey: 'zahlungsbeleg', urlKey: 'zahlungsbelegUrl' },
+    ];
 
-    // Simuliere Datei-Uploads, indem URLs generiert werden
-    if (dataFromForm.hauptgastAusweisVorderseite && dataFromForm.hauptgastAusweisVorderseite.size > 0) {
-      updatedGuestData.hauptgastAusweisVorderseiteUrl = `https://placehold.co/uploads/mock_hg_v_${Date.now()}_${dataFromForm.hauptgastAusweisVorderseite.name.replace(/\s+/g, '_')}`;
+    for (const field of fileFields) {
+      const file = dataFromForm[field.formDataKey] as File | undefined | null; // File from validated data
+      if (file && file.size > 0) {
+        if (ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const base64 = buffer.toString('base64');
+          updatedGuestData[field.urlKey] = `data:${file.type};base64,${base64}`;
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] Generated data URI for ${file.name}`);
+        } else if (ACCEPTED_PDF_TYPES.includes(file.type)) {
+          updatedGuestData[field.urlKey] = `mock-pdf-url:${encodeURIComponent(file.name)}`;
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] Generated PDF marker for ${file.name}`);
+        } else {
+          // Should not happen due to schema validation, but as a fallback
+          updatedGuestData[field.urlKey] = `https://placehold.co/200x100.png?text=Unsupported_File:${encodeURIComponent(file.name)}`;
+        }
+      } else if (currentGuestData && currentGuestData[field.urlKey]) {
+        // Preserve existing URL if no new file is uploaded for this specific field
+        updatedGuestData[field.urlKey] = currentGuestData[field.urlKey];
+        console.log(`[Action updateBookingStep - Step ${stepNumber}] Preserved existing URL for ${String(field.urlKey)}`);
+      } else {
+        // No new file and no existing file, so ensure the URL key is removed or undefined
+        delete updatedGuestData[field.urlKey];
+         console.log(`[Action updateBookingStep - Step ${stepNumber}] Cleared URL for ${String(field.urlKey)}`);
+      }
     }
-    if (dataFromForm.hauptgastAusweisRückseite && dataFromForm.hauptgastAusweisRückseite.size > 0) {
-      updatedGuestData.hauptgastAusweisRückseiteUrl = `https://placehold.co/uploads/mock_hg_r_${Date.now()}_${dataFromForm.hauptgastAusweisRückseite.name.replace(/\s+/g, '_')}`;
-    }
-    if (dataFromForm.zahlungsbeleg && dataFromForm.zahlungsbeleg.size > 0) {
-      updatedGuestData.zahlungsbelegUrl = `https://placehold.co/uploads/mock_zb_${Date.now()}_${dataFromForm.zahlungsbeleg.name.replace(/\s+/g, '_')}`;
-    }
-     // Für Bestätigungsschritt
-    if (typeof dataFromForm.agbAkzeptiert === 'string') { // Zod wandelt 'on' in string um
+     
+    // Handle Checkboxes for the final step
+    if (stepNumber === 4) { // Assuming step 4 is Uebersicht & Bestaetigung
         updatedGuestData.agbAkzeptiert = dataFromForm.agbAkzeptiert === 'on';
-    }
-    if (typeof dataFromForm.datenschutzAkzeptiert === 'string') {
         updatedGuestData.datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert === 'on';
+        updatedGuestData.submittedAt = new Date().toISOString(); // Set submittedAt on final confirmation
     }
     
-    console.log(`[Action updateBookingStep - Step ${stepNumber}] Final updated guest data (after file handling):`, updatedGuestData);
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Final updated guest data (after file handling):`, JSON.stringify(updatedGuestData, (key, value) => typeof value === 'string' && value.startsWith('data:image') && value.length > 100 ? value.substring(0,100) + '...' : value ));
+
 
     const success = updateMockBookingByToken(bookingToken, { 
       guestSubmittedData: updatedGuestData,
@@ -245,17 +283,17 @@ async function updateBookingStep(
         errors: null, 
         success: true, 
         actionToken: newServerActionToken,
-        updatedGuestData: updatedGuestData // Wichtig: das vollständige, aktualisierte Objekt zurückgeben
+        updatedGuestData: updatedGuestData 
       };
     } else {
       console.error(`[Action updateBookingStep - Step ${stepNumber}] Failed to update booking for token: ${bookingToken}`);
-      return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
+      return { message: "Fehler beim Aktualisieren der Buchung.", errors: null, success: false, actionToken: newServerActionToken, updatedGuestData: null };
     }
 
   } catch (e) {
     const error = e instanceof Error ? e : new Error(String(e));
     console.error(`[Action updateBookingStep - Step ${stepNumber}] Error submitting data:`, error.message, error.stack);
-    return { message: "Serverfehler: Daten konnten nicht übermittelt werden.", errors: null, success: false, actionToken: clientActionToken, updatedGuestData: null };
+    return { message: "Serverfehler: Daten konnten nicht übermittelt werden.", errors: null, success: false, actionToken: newServerActionToken, updatedGuestData: null };
   }
 }
 
@@ -277,7 +315,7 @@ export async function submitZahlungsinformationenAction(bookingToken: string, pr
   const anzahlungsbetrag = booking ? parseFloat((booking.price * 0.3).toFixed(2)) : 0;
   
   return updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, {
-    zahlungsbetrag: anzahlungsbetrag,
+    zahlungsbetrag: anzahlungsbetrag, // Dies wird serverseitig hinzugefügt/überschrieben
   });
 }
 
@@ -287,10 +325,10 @@ export async function submitEndgueltigeBestaetigungAction(bookingToken: string, 
 
   if (result.success && result.updatedGuestData) {
     const successConfirmation = updateMockBookingByToken(bookingToken, { 
-        status: "Confirmed",
-        guestSubmittedData: { // Stelle sicher, dass die finalen Daten konsistent sind
+        status: "Confirmed", // Booking is confirmed by guest
+        guestSubmittedData: { 
             ...result.updatedGuestData,
-            agbAkzeptiert: true, // Da das Schema 'on' validiert, setzen wir hier explizit true
+            agbAkzeptiert: true, 
             datenschutzAkzeptiert: true,
         }
     });
@@ -299,12 +337,12 @@ export async function submitEndgueltigeBestaetigungAction(bookingToken: string, 
        const booking = findMockBookingByToken(bookingToken);
        if (booking?.id) revalidatePath(`/admin/bookings/${booking.id}`, "page");
        revalidatePath("/admin/dashboard", "layout");
-       // Hier könnte E-Mail-Versand Logik stehen
        return { ...result, message: "Buchung erfolgreich abgeschlossen und bestätigt!" };
     } else {
         console.error(`[Action submitEndgueltigeBestaetigungAction] Failed to set booking ${bookingToken} to Confirmed.`);
-        return { ...result, success: false, message: "Fehler beim finalen Bestätigen der Buchung."};
+        return { ...result, success: false, message: "Fehler beim finalen Bestätigen der Buchung.", updatedGuestData: result.updatedGuestData };
     }
   }
   return result;
 }
+

@@ -1,11 +1,10 @@
 
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import Image from "next/image";
 import { format, parseISO } from 'date-fns';
@@ -20,11 +19,16 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
   if (!booking) {
     console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found.`);
   } else {
-    // Log guestSubmittedData carefully to avoid overly verbose logs if it's large
     const guestDataSummary = booking.guestSubmittedData 
         ? { submitted: true, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email } 
         : { submitted: false };
     console.log(`[Page admin/bookings/[id]] Found booking for id ${id}. Guest Data Summary:`, guestDataSummary);
+    // Log URLs for debugging
+    if (booking.guestSubmittedData) {
+        console.log(`[Page admin/bookings/[id]] Ausweis Vorderseite URL: ${booking.guestSubmittedData.hauptgastAusweisVorderseiteUrl}`);
+        console.log(`[Page admin/bookings/[id]] Ausweis Rückseite URL: ${booking.guestSubmittedData.hauptgastAusweisRückseiteUrl}`);
+        console.log(`[Page admin/bookings/[id]] Zahlungsbeleg URL: ${booking.guestSubmittedData.zahlungsbelegUrl}`);
+    }
   }
   return booking || null;
 }
@@ -54,9 +58,11 @@ interface DetailItemProps {
   isBadge?: boolean;
   badgeVariant?: "default" | "secondary" | "destructive" | "outline";
   children?: React.ReactNode;
+  isDocumentUrl?: boolean;
+  documentHint?: string;
 }
 
-const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCurrency, isLink, isBadge, badgeVariant, children }) => {
+const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCurrency, isLink, isBadge, badgeVariant, children, isDocumentUrl, documentHint }) => {
   if (children) {
     return (
       <div className="flex items-start space-x-3">
@@ -82,6 +88,41 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     displayValue = value ? "Ja" : "Nein";
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
+  } else if (isDocumentUrl && typeof value === 'string') {
+    if (value.startsWith("data:image/")) {
+      displayValue = (
+        <div className="mt-1 rounded-md border overflow-hidden relative w-40 h-24">
+          <Image src={value} alt={`${label} Vorschau`} layout="fill" objectFit="contain" data-ai-hint={documentHint || "document"}/>
+           <Button asChild size="sm" className="absolute bottom-1 right-1 opacity-80 hover:opacity-100 text-xs p-1 h-auto">
+                <Link href={value} target="_blank" rel="noopener noreferrer">
+                    <FileText className="mr-1 h-3 w-3"/>Ansehen
+                </Link>
+            </Button>
+        </div>
+      );
+    } else if (value.startsWith("mock-pdf-url:")) {
+      const fileName = decodeURIComponent(value.substring("mock-pdf-url:".length));
+      displayValue = (
+        <Button asChild variant="outline" size="sm">
+          <Link href="#" target="_blank" rel="noopener noreferrer"> {/* In real app, point to actual PDF URL */}
+            <FileIcon className="mr-2 h-4 w-4"/> {fileName}
+          </Link>
+        </Button>
+      );
+    } else if (value.startsWith("https://placehold.co")) { // Fallback for old placeholders
+        displayValue = (
+            <div className="mt-1 rounded-md border overflow-hidden relative w-40 h-24">
+                <Image src={value} alt={`${label} Platzhalter`} layout="fill" objectFit="cover" data-ai-hint={documentHint || "document placeholder"}/>
+                 <Button asChild size="sm" className="absolute bottom-1 right-1 opacity-80 hover:opacity-100 text-xs p-1 h-auto">
+                    <Link href={value} target="_blank" rel="noopener noreferrer">
+                        <FileText className="mr-1 h-3 w-3"/>Ansehen
+                    </Link>
+                </Button>
+            </div>
+        );
+    } else if (isLink) { // General links
+        displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
+    }
   } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
   } else if (isBadge && typeof value === 'string') {
@@ -196,40 +237,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     <h3 className="font-semibold text-lg mt-4 flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
                         <DetailItem icon={Briefcase} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-2">
-                      {guestData.hauptgastAusweisVorderseiteUrl && (
-                        <div className="rounded-md overflow-hidden border aspect-video relative">
-                          <Image 
-                            src={guestData.hauptgastAusweisVorderseiteUrl} 
-                            alt="Ausweis Vorderseite" 
-                            fill={true}
-                            style={{objectFit: "cover"}}
-                            data-ai-hint="identification document"
-                          />
-                           <Button asChild size="sm" className="absolute bottom-2 right-2 opacity-80 hover:opacity-100">
-                                <Link href={guestData.hauptgastAusweisVorderseiteUrl} target="_blank" rel="noopener noreferrer">
-                                    <FileText className="mr-1 h-3 w-3"/>Ansehen
-                                </Link>
-                            </Button>
-                        </div>
-                      )}
-                      {guestData.hauptgastAusweisRückseiteUrl && (
-                        <div className="rounded-md overflow-hidden border aspect-video relative">
-                          <Image 
-                            src={guestData.hauptgastAusweisRückseiteUrl} 
-                            alt="Ausweis Rückseite" 
-                            fill={true}
-                            style={{objectFit: "cover"}}
-                            data-ai-hint="identification document"
-                          />
-                           <Button asChild size="sm" className="absolute bottom-2 right-2 opacity-80 hover:opacity-100">
-                                <Link href={guestData.hauptgastAusweisRückseiteUrl} target="_blank" rel="noopener noreferrer">
-                                    <FileText className="mr-1 h-3 w-3"/>Ansehen
-                                </Link>
-                            </Button>
-                        </div>
-                      )}
+                        <DetailItem icon={FileText} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification document front"/>
+                        <DetailItem icon={FileText} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification document back"/>
                     </div>
                   </>
                 )}
@@ -242,28 +251,11 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                             <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
                             <DetailItem icon={Euro} label="Anzahlung (30%)" value={guestData.zahlungsbetrag} isCurrency/>
                             <DetailItem icon={CalendarDays} label="Zahlungsdatum" value={formatDate(guestData.zahlungsdatum)} />
+                            <DetailItem icon={FileText} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof"/>
                         </div>
-                        {guestData.zahlungsbelegUrl && (
-                             <div className="mt-2">
-                                <p className="text-sm font-medium mb-1">Zahlungsbeleg:</p>
-                                <Button asChild variant="outline" size="sm">
-                                    <Link href={guestData.zahlungsbelegUrl} target="_blank" rel="noopener noreferrer">
-                                        <FileText className="mr-2 h-4 w-4"/>Beleg ansehen
-                                    </Link>
-                                </Button>
-                            </div>
-                        )}
                     </>
                 )}
                 
-                {guestData.specialRequests && ( // Dieses Feld wird aktuell im neuen Flow nicht erfasst
-                  <>
-                    <Separator />
-                    <h3 className="font-semibold text-lg mt-4">Sonderwünsche (Alt)</h3>
-                    <DetailItem icon={MessageSquare} label="Nachricht" value={guestData.specialRequests} />
-                  </>
-                )}
-
                 {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
                     <>
                         <Separator />
