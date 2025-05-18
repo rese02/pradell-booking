@@ -9,7 +9,6 @@ import {
   updateMockBookingByToken,
   addMockBooking,
   deleteMockBookingsByIds,
-  // getMockBookings // Not used directly in this file anymore
 } from "@/lib/mock-db";
 
 // --- Zod Schemas ---
@@ -46,7 +45,7 @@ const fileSchema = z.instanceof(File).optional().nullable()
   .refine((file) => !file || file.size === 0 || file.size <= MAX_FILE_SIZE, `Maximale Dateigröße ist 10MB.`)
   .refine(
     (file) => {
-      if (!file || file.size === 0) return true; // Allow empty or no file
+      if (!file || file.size === 0) return true; 
       return ACCEPTED_FILE_TYPES.includes(file.type);
     },
     (file) => ({ message: `Nur ${ACCEPTED_FILE_TYPES.map(t => t.split('/')[1]).join(', ').toUpperCase()} Dateien sind erlaubt. Erhalten: ${file?.type || 'unbekannt'}` })
@@ -77,6 +76,7 @@ const zahlungsinformationenSchema = z.object({
     message: "Ungültiges Zahlungsdatum."
   }),
   zahlungsbeleg: fileSchema.refine(file => !!file && file.size > 0, { message: "Zahlungsbeleg ist erforderlich."}),
+  zahlungsbetrag: z.coerce.number().nonnegative("Anzahlungsbetrag muss eine nicht-negative Zahl sein."),
 });
 
 const uebersichtBestaetigungSchema = z.object({
@@ -88,99 +88,22 @@ const uebersichtBestaetigungSchema = z.object({
   })),
 });
 
-// --- Form State Type (imported by components) ---
+
 export type FormState = {
   message?: string | null;
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
-  actionToken?: string; // To prevent duplicate submissions or navigation issues
-  updatedGuestData?: GuestSubmittedData | null; // To send back the latest data
+  actionToken?: string; 
+  updatedGuestData?: GuestSubmittedData | null; 
 };
 
-// --- Helper Functions ---
 function generateActionToken() {
   return Date.now().toString() + Math.random().toString(36).substring(2, 9);
 }
 
-// --- Server Actions ---
-
-export async function createBookingAction(prevState: FormState, formData: FormData): Promise<FormState> {
-  const rawFormData = Object.fromEntries(formData.entries());
-  console.log("[Action createBookingAction] Received form data:", rawFormData);
-  const validatedFields = createBookingSchema.safeParse(rawFormData);
-  const newActionToken = generateActionToken(); 
-
-  if (!validatedFields.success) {
-    console.error("[Action createBookingAction] Validation failed:", validatedFields.error.flatten().fieldErrors);
-    return {
-      errors: validatedFields.error.flatten().fieldErrors,
-      message: "Fehler bei der Validierung der Buchungsdaten.",
-      success: false,
-      actionToken: newActionToken,
-      updatedGuestData: null,
-    };
-  }
-
-  const bookingData = validatedFields.data;
-
-  try {
-    const newBookingId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
-    const newBookingToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-
-    const newBooking: Booking = {
-      id: newBookingId,
-      guestFirstName: bookingData.guestFirstName,
-      guestLastName: bookingData.guestLastName,
-      price: bookingData.price,
-      checkInDate: new Date(bookingData.checkInDate).toISOString(),
-      checkOutDate: new Date(bookingData.checkOutDate).toISOString(),
-      bookingToken: newBookingToken,
-      status: "Pending Guest Information",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      verpflegung: bookingData.verpflegung,
-      zimmertyp: bookingData.zimmertyp,
-      erwachsene: bookingData.erwachsene,
-      kinder: bookingData.kinder,
-      kleinkinder: bookingData.kleinkinder,
-      alterKinder: bookingData.alterKinder || '',
-      interneBemerkungen: bookingData.interneBemerkungen || '',
-      roomIdentifier: `${bookingData.zimmertyp || 'Zimmer'}`, 
-      guestSubmittedData: { 
-        lastCompletedStep: -1, // 0-indexed, -1 means no steps completed
-      }
-    };
-
-    addMockBooking(newBooking); // Add to our mock DB
-    console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
-    
-    revalidatePath("/admin/dashboard", "layout");
-    revalidatePath(`/buchung/${newBookingToken}`, "layout"); // Revalidate the guest page if it was already visited
-
-    return {
-      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt.`,
-      errors: null,
-      success: true,
-      actionToken: newActionToken,
-      updatedGuestData: newBooking.guestSubmittedData, // Send initial guest data structure
-    };
-  } catch (e) {
-    const error = e instanceof Error ? e : new Error(String(e));
-    console.error("[Action createBookingAction] Error creating booking:", error.message, error.stack);
-    return { 
-        message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", 
-        errors: null, 
-        success: false,
-        actionToken: newActionToken,
-        updatedGuestData: null,
-    };
-  }
-}
-
-
 async function updateBookingStep(
   bookingToken: string,
-  stepNumber: number, // 1-based for human readability, will be converted to 0-based for lastCompletedStep
+  stepNumber: number, 
   actionSchema: z.ZodType<any, any>,
   formData: FormData,
   additionalDataToMerge?: Partial<GuestSubmittedData>
@@ -190,14 +113,14 @@ async function updateBookingStep(
   const rawFormData = Object.fromEntries(formData.entries());
   
   console.log(`[Action updateBookingStep BEGIN - Step ${stepNumber}] Token: "${bookingToken}". Action Token: ${newServerActionToken}.`);
-  // console.log(`[Action updateBookingStep - Step ${stepNumber}] Raw FormData (files as objects):`, 
-  //   JSON.stringify(Object.fromEntries(
-  //     Object.entries(rawFormData).map(([key, value]) => {
-  //       if (value instanceof File) return [key, { name: value.name, size: value.size, type: value.type }];
-  //       return [key, value];
-  //     })
-  //   ), null, 2).substring(0, 1000) // Limit log length
-  // );
+  const loggableRawFormData = Object.fromEntries(
+    Object.entries(rawFormData).map(([key, value]) => {
+      if (value instanceof File) return [key, { name: value.name, size: value.size, type: value.type }];
+      return [key, value];
+    })
+  );
+  console.log(`[Action updateBookingStep - Step ${stepNumber}] Raw FormData (files as objects):`, JSON.stringify(loggableRawFormData, null, 2).substring(0, 1500));
+
 
   let currentBookingDataSnapshot: GuestSubmittedData | null = null;
 
@@ -224,13 +147,12 @@ async function updateBookingStep(
         message: `Fehler bei der Validierung für Schritt ${stepNumber}. Bitte überprüfen Sie Ihre Eingaben.`,
         success: false,
         actionToken: newServerActionToken,
-        updatedGuestData: null, // Or potentially currentGuestData if fetched before validation
+        updatedGuestData: null,
       };
     }
     console.log(`[Action updateBookingStep - Step ${stepNumber}] Validation successful for token "${bookingToken}".`);
-    const dataFromForm = validatedFields.data as GuestSubmittedDataFromForm; // Type assertion
+    const dataFromForm = validatedFields.data as GuestSubmittedDataFromForm; 
     
-    // Logging validated data (excluding file objects for brevity)
     const loggableDataFromForm = {...dataFromForm};
     for (const key of ['hauptgastAusweisVorderseite', 'hauptgastAusweisRückseite', 'zahlungsbeleg'] as (keyof GuestSubmittedDataFromForm)[]) {
         if (loggableDataFromForm[key] instanceof File) {
@@ -238,14 +160,16 @@ async function updateBookingStep(
             (loggableDataFromForm as any)[key] = { name: file.name, size: file.size, type: file.type };
         }
     }
-    // console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated data for token "${bookingToken}":`, JSON.stringify(loggableDataFromForm, null, 2));
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Validated data for token "${bookingToken}":`, JSON.stringify(loggableDataFromForm, null, 2).substring(0,1000));
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Additional data to merge:`, JSON.stringify(additionalDataToMerge, null, 2));
+
 
     const booking = findMockBookingByToken(bookingToken);
     if (!booking) {
       console.warn(`[Action updateBookingStep - Step ${stepNumber}] Booking not found for token: "${bookingToken}"`);
       return { message: "Buchung nicht gefunden.", errors: null, success: false, actionToken: newServerActionToken, updatedGuestData: null };
     }
-    console.log(`[Action updateBookingStep - Step ${stepNumber}] Booking found for token "${bookingToken}". Current status: ${booking.status}`);
+    console.log(`[Action updateBookingStep - Step ${stepNumber}] Booking found for token "${bookingToken}". Current status: ${booking.status}, Current guest data:`, JSON.stringify(booking.guestSubmittedData, null, 2).substring(0,500));
 
     currentBookingDataSnapshot = JSON.parse(JSON.stringify(booking.guestSubmittedData || { lastCompletedStep: -1 }));
     
@@ -255,7 +179,6 @@ async function updateBookingStep(
       ...dataFromForm, 
     };
     
-    // lastCompletedStep is 0-indexed, stepNumber is 1-based
     updatedGuestData.lastCompletedStep = Math.max(currentBookingDataSnapshot.lastCompletedStep ?? -1, stepNumber - 1);
     console.log(`[Action updateBookingStep - Step ${stepNumber}] Merged guest data for token "${bookingToken}". New lastCompletedStep: ${updatedGuestData.lastCompletedStep}`);
 
@@ -266,26 +189,35 @@ async function updateBookingStep(
     ];
 
     for (const field of fileFields) {
+      console.log(`[Action updateBookingStep - Step ${stepNumber}] Processing file field: ${String(field.formDataKey)}`);
       const file = rawFormData[String(field.formDataKey)] as File | undefined | null;
-      if (file instanceof File && file.size > 0) {
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] Processing new file for ${String(field.formDataKey)}: ${file.name} (${file.size} bytes, type: ${file.type})`);
-        // In a real app, upload to cloud storage here and get URL
-        // For mock: store a marker with the filename
-        updatedGuestData[field.urlKey] = `mock-file-url:${encodeURIComponent(file.name)}`;
-        console.log(`[Action updateBookingStep - Step ${stepNumber}] Stored MOCK URL for ${file.name}: ${updatedGuestData[field.urlKey]}`);
-      } else if (currentBookingDataSnapshot && currentBookingDataSnapshot[field.urlKey]) {
-        // No new file uploaded for this field, keep the existing URL if one exists
-        updatedGuestData[field.urlKey] = currentBookingDataSnapshot[field.urlKey];
-        // console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(field.formDataKey)}, keeping old URL: ${updatedGuestData[field.urlKey]}`);
-      } else {
-        // No new file and no old URL, ensure the field is not present or is undefined
-        delete updatedGuestData[field.urlKey];
-        // console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old URL for ${String(field.formDataKey)}.`);
+      console.log(`[Action updateBookingStep - Step ${stepNumber}] File object for ${String(field.formDataKey)}:`, file instanceof File ? { name: file.name, size: file.size, type: file.type } : file);
+
+      try {
+        if (file instanceof File && file.size > 0) {
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] New file for ${String(field.formDataKey)}: ${file.name} (${file.size} bytes, type: ${file.type})`);
+          updatedGuestData[field.urlKey] = `mock-file-url:${encodeURIComponent(file.name)}`;
+          console.log(`[Action updateBookingStep - Step ${stepNumber}] Stored MOCK URL for ${file.name}: ${updatedGuestData[field.urlKey]}`);
+        } else if (updatedGuestData[field.urlKey]) {
+           console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file for ${String(field.formDataKey)}, keeping old URL: ${updatedGuestData[field.urlKey]}`);
+        } else {
+           delete updatedGuestData[field.urlKey];
+           console.log(`[Action updateBookingStep - Step ${stepNumber}] No new file and no old URL for ${String(field.formDataKey)}.`);
+        }
+      } catch (fileProcessingError) {
+        const err = fileProcessingError instanceof Error ? fileProcessingError : new Error(String(fileProcessingError));
+        console.error(`[Action updateBookingStep - Step ${stepNumber}] Error processing file for ${String(field.formDataKey)}:`, err.message, err.stack);
+        return {
+          message: `Fehler bei der Verarbeitung der Datei für ${String(field.formDataKey)}: ${err.message}`,
+          errors: { [String(field.formDataKey)]: [err.message] },
+          success: false,
+          actionToken: newServerActionToken,
+          updatedGuestData: currentBookingDataSnapshot,
+        };
       }
     }
      
-    if (stepNumber === 4) { // Übersicht & Bestätigung
-        // Zod schema with preprocess ensures these are booleans if validation passed
+    if (stepNumber === 4) { 
         updatedGuestData.agbAkzeptiert = dataFromForm.agbAkzeptiert; 
         updatedGuestData.datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert;
         
@@ -293,17 +225,15 @@ async function updateBookingStep(
             updatedGuestData.submittedAt = new Date().toISOString();
             console.log(`[Action updateBookingStep - Step 4] AGB & Datenschutz akzeptiert. SubmittedAt gesetzt for token "${bookingToken}".`);
         } else {
-            // This case should ideally not be reached if Zod validation is strict for these fields being true.
              console.warn(`[Action updateBookingStep - Step 4] AGB und/oder Datenschutz nicht akzeptiert for token "${bookingToken}". SubmittedAt nicht gesetzt.`);
         }
     }
     
-    // Safer logging for potentially large string values in guest data
     const guestDataForLogging = { ...updatedGuestData };
     for (const key in guestDataForLogging) {
         if (Object.prototype.hasOwnProperty.call(guestDataForLogging, key)) {
             const value = (guestDataForLogging as any)[key];
-            if (typeof value === 'string' && value.length > 200) { // Shortened threshold for logging
+            if (typeof value === 'string' && value.length > 50) { 
                  (guestDataForLogging as any)[key] = `${value.substring(0,50)}...[truncated ${value.length} bytes]`;
             }
         }
@@ -352,7 +282,7 @@ async function updateBookingStep(
         errors: null, 
         success: false, 
         actionToken: newServerActionToken, 
-        updatedGuestData: currentBookingDataSnapshot // Return snapshot before failed update
+        updatedGuestData: currentBookingDataSnapshot 
       };
     }
 
@@ -364,7 +294,7 @@ async function updateBookingStep(
         errors: null, 
         success: false, 
         actionToken: newServerActionToken, 
-        updatedGuestData: currentBookingDataSnapshot // Return snapshot if available
+        updatedGuestData: currentBookingDataSnapshot 
     };
   } finally {
     console.log(`[Action updateBookingStep END - Step ${stepNumber}] Token: "${bookingToken}". Action Token: ${newServerActionToken}.`);
@@ -372,34 +302,119 @@ async function updateBookingStep(
 }
 
 export async function submitGastStammdatenAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
-  console.log("[Action submitGastStammdatenAction] Called for bookingToken:", bookingToken);
+  console.log(`[Action submitGastStammdatenAction] Called for bookingToken: "${bookingToken}"`);
   return updateBookingStep(bookingToken, 1, gastStammdatenSchema, formData);
 }
 
 export async function submitAusweisdokumenteAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
-  console.log("[Action submitAusweisdokumenteAction] Called for bookingToken:", bookingToken);
+  console.log(`[Action submitAusweisdokumenteAction] Called for bookingToken: "${bookingToken}"`);
   return updateBookingStep(bookingToken, 2, ausweisdokumenteSchema, formData);
 }
 
 export async function submitZahlungsinformationenAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
-  console.log("[Action submitZahlungsinformationenAction] Called for bookingToken:", bookingToken);
+  console.log(`[Action submitZahlungsinformationenAction] Called for bookingToken: "${bookingToken}"`);
   const booking = findMockBookingByToken(bookingToken);
   let anzahlungsbetrag = 0;
   if (booking && typeof booking.price === 'number') {
     anzahlungsbetrag = parseFloat((booking.price * 0.3).toFixed(2));
+    console.log(`[Action submitZahlungsinformationenAction] Calculated anzahlungsbetrag: ${anzahlungsbetrag} for booking price: ${booking.price}`);
   } else {
-     console.warn(`[Action submitZahlungsinformationenAction] Booking not found or price not a number for token "${bookingToken}". Anzahlungsbetrag ist 0.`);
+     console.warn(`[Action submitZahlungsinformationenAction] Booking not found or price not a number for token "${bookingToken}". Anzahlungsbetrag is 0. Booking:`, booking);
   }
+
+  // Log FormData specifically for this action
+  const rawFormDataEntries = Object.fromEntries(formData.entries());
+  console.log(`[Action submitZahlungsinformationenAction] Raw FormData for token "${bookingToken}":`,
+    JSON.stringify(Object.fromEntries(
+      Object.entries(rawFormDataEntries).map(([key, value]) => {
+        if (value instanceof File) return [key, { name: value.name, size: value.size, type: value.type, lastModified: (value as any).lastModified }];
+        return [key, value];
+      })
+    ), null, 2)
+  );
   
-  return updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData, {
-    zahlungsbetrag: anzahlungsbetrag, 
-  });
+  // zahlungsbetrag is now part of zahlungsinformationenSchema, so no need to pass it in additionalDataToMerge
+  return updateBookingStep(bookingToken, 3, zahlungsinformationenSchema, formData);
 }
 
 export async function submitEndgueltigeBestaetigungAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
-  console.log("[Action submitEndgueltigeBestaetigungAction] Called for bookingToken:", bookingToken);
+  console.log(`[Action submitEndgueltigeBestaetigungAction] Called for bookingToken: "${bookingToken}"`);
   return updateBookingStep(bookingToken, 4, uebersichtBestaetigungSchema, formData);
 }
+
+export async function createBookingAction(prevState: FormState, formData: FormData): Promise<FormState> {
+  const rawFormData = Object.fromEntries(formData.entries());
+  console.log("[Action createBookingAction] Received form data:", rawFormData);
+  const validatedFields = createBookingSchema.safeParse(rawFormData);
+  const newActionToken = generateActionToken(); 
+
+  if (!validatedFields.success) {
+    console.error("[Action createBookingAction] Validation failed:", validatedFields.error.flatten().fieldErrors);
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: "Fehler bei der Validierung der Buchungsdaten.",
+      success: false,
+      actionToken: newActionToken,
+      updatedGuestData: null,
+    };
+  }
+
+  const bookingData = validatedFields.data;
+
+  try {
+    const newBookingId = Date.now().toString() + Math.random().toString(36).substring(2, 7);
+    const newBookingToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+    const newBooking: Booking = {
+      id: newBookingId,
+      guestFirstName: bookingData.guestFirstName,
+      guestLastName: bookingData.guestLastName,
+      price: bookingData.price,
+      checkInDate: new Date(bookingData.checkInDate).toISOString(),
+      checkOutDate: new Date(bookingData.checkOutDate).toISOString(),
+      bookingToken: newBookingToken,
+      status: "Pending Guest Information",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      verpflegung: bookingData.verpflegung,
+      zimmertyp: bookingData.zimmertyp,
+      erwachsene: bookingData.erwachsene,
+      kinder: bookingData.kinder,
+      kleinkinder: bookingData.kleinkinder,
+      alterKinder: bookingData.alterKinder || '',
+      interneBemerkungen: bookingData.interneBemerkungen || '',
+      roomIdentifier: `${bookingData.zimmertyp || 'Zimmer'}`, 
+      guestSubmittedData: { 
+        lastCompletedStep: -1, 
+      }
+    };
+
+    addMockBooking(newBooking); 
+    console.log(`[Action createBookingAction] New booking added. Token: ${newBookingToken}. ID: ${newBookingId}`);
+    
+    revalidatePath("/admin/dashboard", "layout");
+    revalidatePath(`/buchung/${newBookingToken}`, "layout"); 
+
+    return {
+      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt.`,
+      errors: null,
+      success: true,
+      actionToken: newActionToken,
+      updatedGuestData: newBooking.guestSubmittedData, 
+    };
+  } catch (e) {
+    const error = e instanceof Error ? e : new Error(String(e));
+    console.error("[Action createBookingAction] Error creating booking:", error.message, error.stack);
+    return { 
+        message: "Datenbankfehler: Buchung konnte nicht erstellt werden.", 
+        errors: null, 
+        success: false,
+        actionToken: newActionToken,
+        updatedGuestData: null,
+    };
+  }
+}
+
 
 export async function deleteBookingsAction(bookingIds: string[]): Promise<{ success: boolean; message: string, actionToken: string }> {
   const actionToken = generateActionToken();
@@ -417,7 +432,6 @@ export async function deleteBookingsAction(bookingIds: string[]): Promise<{ succ
       console.log(`[Action deleteBookingsAction] Successfully deleted bookings. Revalidating dashboard.`);
       return { success: true, message: `${bookingIds.length} Buchung(en) erfolgreich gelöscht.`, actionToken };
     } else {
-      // This branch is unlikely if deleteMockBookingsByIds always returns true from mock-db
       console.warn(`[Action deleteBookingsAction] deleteMockBookingsByIds reported no success for IDs: ${bookingIds.join(', ')}`);
       return { success: false, message: "Buchungen konnten nicht aus der Mock-DB gelöscht werden (interne Logik).", actionToken };
     }
