@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea"; 
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent, BookUser } from "lucide-react"; // Added BookUser
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, MessageSquare, ShieldCheck, Info, Users, CreditCard, ShieldQuestion, Trash2, PlusCircle, Landmark, Euro, WalletCards, Percent, FileText, Edit3, Gift, BadgePercent, BookUser } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { 
   submitGastStammdatenAction,
   submitAusweisdokumenteAction,
@@ -25,7 +26,6 @@ import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 interface Step {
   id: string;
@@ -39,7 +39,7 @@ interface Step {
 interface StepContentProps {
   bookingToken: string;
   bookingDetails?: Booking | null; 
-  guestData?: GuestSubmittedData | null; // Dies wird nun `latestGuestSubmittedData` sein
+  guestData?: GuestSubmittedData | null;
   formState: FormState;
   currentActionToken?: string; 
 }
@@ -49,7 +49,7 @@ type FormState = {
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
   actionToken?: string; 
-  updatedGuestData?: GuestSubmittedData | null; // Hinzugefügt, um die neuesten Daten vom Server zu erhalten
+  updatedGuestData?: GuestSubmittedData | null;
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined, updatedGuestData: null };
@@ -152,8 +152,6 @@ const AusweisdokumenteStep: React.FC<StepContentProps> = ({ guestData, formState
   const [fileNameRückseite, setFileNameRückseite] = useState<string | null>(null);
 
   useEffect(() => {
-    // Zeigt an, ob eine Datei bereits hochgeladen wurde (URL vorhanden)
-    // Wenn der Nutzer eine neue Datei auswählt, überschreibt `onChange` dies.
     if (guestData?.hauptgastAusweisVorderseiteUrl && !fileNameVorderseite) {
         setFileNameVorderseite("Bereits hochgeladen (Vorderseite)");
     }
@@ -250,7 +248,7 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
   const anzahlungsbetrag = useMemo(() => {
     const price = bookingDetails?.price;
     if (typeof price !== 'number') return 0;
-    return parseFloat((price * 0.3).toFixed(2)); // Auf 2 Dezimalstellen für Währung
+    return parseFloat((price * 0.3).toFixed(2));
   }, [bookingDetails?.price]);
 
   useEffect(() => {
@@ -270,6 +268,7 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ bookingDetails,
       <div>
         <Label>Anzahlungsbetrag (30%)</Label>
         <Input value={formatCurrency(anzahlungsbetrag)} readOnly className="mt-1 bg-muted/50" />
+        <Input type="hidden" name="zahlungsbetrag" value={anzahlungsbetrag} />
         <p className="text-xs text-muted-foreground mt-1">Der Restbetrag ist vor Ort im Hotel zu begleichen.</p>
       </div>
       
@@ -425,7 +424,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   const [formState, formAction, isPending] = useActionState(currentAction, initialFormState);
 
   useEffect(() => {
-    console.log("[GuestBookingFormStepper useEffect] formState changed:", JSON.parse(JSON.stringify(formState))); // Deep copy for logging
+    console.log("[GuestBookingFormStepper useEffect] formState changed:", JSON.parse(JSON.stringify(formState)));
     console.log(`[GuestBookingFormStepper useEffect] Conditions: success=${formState.success}, actionToken=${formState.actionToken}, lastProcessedToken=${lastProcessedActionTokenRef.current}, currentStep=${currentStep}`);
 
     if (formState.message && (formState.actionToken !== lastProcessedActionTokenRef.current || !formState.success || (formState.errors && Object.keys(formState.errors).length > 0) )) {
@@ -450,12 +449,12 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         setCurrentStep(prev => prev + 1);
       } else if (currentStep === steps.length - 1) {
         console.log("[GuestBookingFormStepper useEffect] All interactive steps completed. Finalizing. Moving to success screen.");
-        setCurrentStep(steps.length); // Marks completion for final screen
+        setCurrentStep(steps.length); 
       }
     } else if (formState.success && formState.actionToken && formState.actionToken === lastProcessedActionTokenRef.current) {
         console.log(`[GuestBookingFormStepper useEffect] Action with token ${formState.actionToken} was already processed. No navigation. currentStep: ${currentStep}`);
     }
-  }, [formState, toast, currentStep, steps]); // Removed latestGuestSubmittedData from deps to avoid potential loops with setLatestGuestSubmittedData
+  }, [formState, toast, currentStep, steps]);
   
 
   if (!initialBookingDetails) {
@@ -467,8 +466,6 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     );
   }
   
-  // Zeige den Erfolgsbildschirm, wenn currentStep die Anzahl der Schritte erreicht oder die Buchung bereits bestätigt ist
-  // und die Daten übermittelt wurden.
   const showSuccessScreen = currentStep >= steps.length || 
                            (initialBookingDetails.status === "Confirmed" && initialBookingDetails.guestSubmittedData?.submittedAt);
 
@@ -558,11 +555,12 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
               </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form action={formAction} key={currentStep} encType="multipart/form-data"> {/* Added key and encType */}
+            {/* Das key-Attribut hier ist entscheidend, um den Form-State bei Schrittwechsel zurückzusetzen */}
+            <form action={formAction} key={currentStep}> 
               <ActiveStepContent
                 bookingToken={bookingToken}
-                bookingDetails={initialBookingDetails} // Beibehaltung der initialen Buchungsdetails für Anzeige
-                guestData={latestGuestSubmittedData}   // Übergabe der aktuellsten Gastdaten für Formular-Vorbelegung und Übersicht
+                bookingDetails={initialBookingDetails}
+                guestData={latestGuestSubmittedData}  
                 formState={formState}
                 currentActionToken={lastProcessedActionTokenRef.current || initialFormState.actionToken}
               />
