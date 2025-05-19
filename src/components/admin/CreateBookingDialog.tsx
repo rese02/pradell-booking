@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useActionState } from "react"; // Geändert von react-dom zu react und useFormState zu useActionState
+import { useActionState } from "react"; 
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-} from "@/components/ui/dialog"; // DialogDescription und DialogFooter entfernt, da sie im aktuellen Code nicht direkt verwendet wurden
+  DialogTrigger, // Added DialogTrigger
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -155,7 +156,7 @@ export function CreateBookingDialog() {
           <DialogTitle>Neue Buchung erstellen</DialogTitle>
         </DialogHeader>
         <form action={formAction} key={formKey}>
-          <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({ // id wird hier korrekt für das Backend entfernt
+          <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({ 
             ...rest,
             erwachsene: parseInt(rest.erwachsene, 10) || 0,
             kinder: parseInt(rest.kinder || "0", 10) || 0,
@@ -327,7 +328,7 @@ export function CreateBookingDialog() {
             </div>
           </div>
 
-          <div className="mt-6 pt-4 border-t flex justify-end space-x-2"> {/* DialogFooter ersetzt durch div für Konsistenz */}
+          <div className="mt-6 pt-4 border-t flex justify-end space-x-2"> 
             <DialogClose asChild>
               <Button variant="outline" type="button">Abbrechen</Button>
             </DialogClose>
@@ -338,3 +339,5 @@ export function CreateBookingDialog() {
     </Dialog>
   );
 }
+
+    
