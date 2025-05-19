@@ -10,7 +10,7 @@ import {
   findBookingByIdFromFirestore,
   updateBookingInFirestore,
   deleteBookingsFromFirestoreByIds,
-} from "./mock-db"; // Should be firestore-db.ts conceptually
+} from "./mock-db"; 
 import { storage, firebaseInitializedCorrectly, db, firebaseInitializationError } from "@/lib/firebase";
 import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { Timestamp } from "firebase/firestore";
@@ -20,10 +20,10 @@ export type FormState = {
   message?: string | null;
   errors?: Record<string, string[] | undefined> | null;
   success?: boolean;
-  actionToken?: string; // To prevent re-processing on refresh if state persists
+  actionToken?: string; 
   updatedGuestData?: GuestSubmittedData | null;
-  currentStep?: number; // Optional: to help stepper sync if needed
-  bookingToken?: string | null; // For createBookingAction response
+  currentStep?: number; 
+  bookingToken?: string | null; 
 };
 
 const initialFormState: FormState = { message: null, errors: null, success: false, actionToken: undefined, updatedGuestData: null, bookingToken: null };
@@ -48,39 +48,34 @@ const fileSchema = z.instanceof(File).optional().nullable()
     (file) => ({ message: `Nur JPG, PNG, WEBP, PDF Dateien sind erlaubt. Erhalten: ${file?.type || 'unbekannt'}` })
   );
 
-// Schema for Step 1: Gast-Stammdaten & Ausweis Hauptgast
+
 const gastStammdatenSchema = z.object({
-  anrede: z.enum(['Herr', 'Frau', 'Divers']).optional(),
   gastVorname: z.string().min(1, "Vorname ist erforderlich."),
   gastNachname: z.string().min(1, "Nachname ist erforderlich."),
-  geburtsdatum: z.string().optional().refine(val => !val || !isNaN(Date.parse(val)), {message: "Ungültiges Geburtsdatum."}),
   email: z.string().email("Ungültige E-Mail-Adresse."),
   telefon: z.string().min(1, "Telefonnummer ist erforderlich."),
-  alterHauptgast: z.string().optional().transform(val => val ? parseInt(val, 10) : undefined).refine(val => val === undefined || (typeof val === 'number' && val > 0), { message: "Alter muss eine positive Zahl sein."}),
+  alterHauptgast: z.string().optional().transform(val => val ? parseInt(val, 10) : undefined).refine(val => val === undefined || (typeof val === 'number' && val > 0 && val < 120), { message: "Alter muss eine plausible Zahl sein."}),
   hauptgastAusweisVorderseiteFile: fileSchema,
   hauptgastAusweisRückseiteFile: fileSchema,
 });
 
-// Schema for Step 2: Mitreisende
+
 const mitreisenderEinzelschema = z.object({
+  id: z.string(), // Wichtig für React keys und Identifikation
   vorname: z.string().min(1, "Vorname des Mitreisenden ist erforderlich."),
   nachname: z.string().min(1, "Nachname des Mitreisenden ist erforderlich."),
-  // Optional: Add age or other fields if needed for companions
-  // alter: z.string().optional().transform(val => val ? parseInt(val, 10) : undefined).refine(val => val === undefined || (typeof val === 'number' && val > 0), { message: "Alter muss eine positive Zahl sein."}),
 });
-// Files for Mitreisende will be handled separately due to FormData structure for arrays of files
+
 
 const paymentAmountSelectionSchema = z.object({
   paymentAmountSelection: z.enum(['downpayment', 'full_amount'], { required_error: "Bitte wählen Sie eine Zahlungssumme." }),
 });
 
 const zahlungsinformationenSchema = z.object({
-  zahlungsart: z.literal('Überweisung', { required_error: "Zahlungsart ist erforderlich."}),
-  zahlungsdatum: z.string().min(1, "Zahlungsdatum ist erforderlich.").refine(val => !isNaN(Date.parse(val)), {
-    message: "Ungültiges Zahlungsdatum."
-  }),
   zahlungsbelegFile: fileSchema.refine(file => !!file && file.size > 0, { message: "Zahlungsbeleg ist erforderlich."}),
   zahlungsbetrag: z.string().transform(val => parseFloat(val)).refine(val => val > 0, "Zahlungsbetrag muss positiv sein."),
+  // zahlungsart wird serverseitig gesetzt
+  // zahlungsdatum wird entfernt, da nicht mehr im UI
 });
 
 const uebersichtBestaetigungSchema = z.object({
@@ -104,11 +99,11 @@ function logSafe(context: string, data: any, level: 'info' | 'warn' | 'error' = 
   }, 2);
   const logMessage = `[Action ${context}] ${simplifiedData.length > 1500 ? simplifiedData.substring(0,1500) + '... [LOG TRUNCATED]' : simplifiedData}`;
 
-  if (process.env.NODE_ENV === 'development') { // Only log extensively in development
+  if (process.env.NODE_ENV === 'development') { 
     if (level === 'error') console.error(logMessage);
     else if (level === 'warn') console.warn(logMessage);
     else console.log(logMessage);
-  } else { // For production, only log errors or critical warnings
+  } else { 
     if (level === 'error') console.error(logMessage);
     else if (level === 'warn' && context.includes("CRITICAL")) console.warn(logMessage);
   }
@@ -117,12 +112,11 @@ function logSafe(context: string, data: any, level: 'info' | 'warn' | 'error' = 
 
 async function updateBookingStep(
   bookingToken: string,
-  stepNumber: number, // 1-basiert
+  stepNumber: number, 
   actionSchema: z.ZodType<any, any>,
   formData: FormData,
   additionalDataToMerge?: Partial<GuestSubmittedData>,
-  mitreisendeDaten?: Partial<Mitreisender>[], // For step 2
-  mitreisendeFiles?: Record<string, Record<string, File | null>> // For step 2 files e.g. { 'mitreisender_0_ausweisVorderseite': File }
+  mitreisendeMetaDaten?: Mitreisender[]
 ): Promise<FormState> {
   const serverActionToken = generateActionToken();
   const actionContext = `updateBookingStep - Step ${stepNumber} - Token: "${bookingToken}" - ActionToken: ${serverActionToken}`;
@@ -141,12 +135,7 @@ async function updateBookingStep(
   let rawFormData: Record<string, any>;
   try {
     rawFormData = Object.fromEntries(formData.entries());
-     // Log only keys for Mitreisende files for brevity
-    const displayFormData = {...rawFormData};
-    if (mitreisendeFiles && Object.keys(mitreisendeFiles).length > 0) {
-        displayFormData.mitreisendeFiles = Object.keys(mitreisendeFiles);
-    }
-    logSafe(`${actionContext} Raw FormData (File objects not fully logged)`, displayFormData);
+    logSafe(`${actionContext} Raw FormData (File objects not fully logged)`, rawFormData);
   } catch (e: any) {
     logSafe(`${actionContext} CRITICAL] Error converting FormData:`, { error: e.message, stack: e.stack?.substring(0,300) }, 'error');
     return { ...initialFormState, message: "Serverfehler: Formularverarbeitung fehlgeschlagen.", errors: { global: ["Formularverarbeitung fehlgeschlagen."] }, success: false, actionToken: serverActionToken, currentStep: stepNumber -1, updatedGuestData: null };
@@ -176,140 +165,124 @@ async function updateBookingStep(
     ...(additionalDataToMerge || {}),
     ...dataFromForm
   };
-
-  // Handle Mitreisende data if provided (for Step 2)
-  if (mitreisendeDaten) {
-    updatedGuestData.mitreisende = mitreisendeDaten as Mitreisender[]; // Assuming conversion happens before
-    logSafe(`${actionContext} Merged Mitreisende data (metadata)`, updatedGuestData.mitreisende);
+  
+  if (mitreisendeMetaDaten) {
+    updatedGuestData.mitreisende = mitreisendeMetaDaten;
   }
 
-  // --- File handling logic for Firebase Storage ---
-  const fileUploadPromises: Promise<void>[] = [];
+  const fileFieldsToProcess: { formDataKey: string; guestDataUrlKey: keyof GuestSubmittedData; companionIndex?: number; companionUrlKey?: keyof Mitreisender }[] = [];
 
-  const processFile = async (file: File | undefined | null, fieldUrlKey: keyof GuestSubmittedData, companionIndex?: number, companionFileFieldKey?: keyof Mitreisender) => {
-    if (file instanceof File && file.size > 0) {
-      const fileProcessingStartTime = Date.now();
-      const originalFileName = file.name;
-      const fileExtension = originalFileName.split('.').pop();
-      const safeFileName = originalFileName.substring(0, originalFileName.length - (fileExtension ? fileExtension.length + 1 : 0)).replace(/[^a-zA-Z0-9_.-]/g, '_');
-      const timestamp = Date.now();
-      const uniqueFileName = `${timestamp}_${safeFileName}${fileExtension ? '.' + fileExtension : ''}`;
-      
-      let filePathPrefix = `bookings/${bookingToken}`;
-      if (typeof companionIndex === 'number' && companionFileFieldKey) {
-          filePathPrefix += `/mitreisende/${companionIndex}/${companionFileFieldKey}`;
-      } else {
-          filePathPrefix += `/${String(fieldUrlKey).replace('Url', 'File')}`; // e.g. /hauptgastAusweisVorderseiteFile
-      }
-      const filePath = `${filePathPrefix}/${uniqueFileName}`;
-      
-      logSafe(`${actionContext} Processing NEW file for ${companionFileFieldKey || fieldUrlKey}: ${originalFileName} (${file.size} bytes) to path ${filePath}`, {});
-      
-      const oldFileUrl = companionIndex !== undefined && companionFileFieldKey && updatedGuestData.mitreisende && updatedGuestData.mitreisende[companionIndex]
-        ? (updatedGuestData.mitreisende[companionIndex] as any)[companionFileFieldKey]
-        : (currentGuestDataSnapshot as any)[fieldUrlKey];
-
-      if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.includes("firebasestorage.googleapis.com")) {
-        try {
-          const oldFileStorageRef = storageRefFB(storage, oldFileUrl);
-          await deleteObject(oldFileStorageRef);
-          logSafe(`${actionContext} Old file ${oldFileUrl} deleted successfully.`, {});
-        } catch (deleteError: any) {
-          logSafe(`${actionContext} Failed to delete old file ${oldFileUrl} for ${fieldUrlKey}: ${deleteError.message} (Code: ${deleteError.code}). Continuing.`, {}, 'warn');
-        }
-      }
-      
-      try {
-        const fileStorageRef = storageRefFB(storage, filePath);
-        const fileBuffer = await file.arrayBuffer();
-        logSafe(`${actionContext} File buffer created for ${originalFileName}. Uploading... Duration: ${Date.now() - fileProcessingStartTime}ms. Size: ${fileBuffer.byteLength}`, {});
-        const uploadStartTime = Date.now();
-        await uploadBytes(fileStorageRef, fileBuffer, { contentType: file.type });
-        logSafe(`${actionContext} Successfully uploaded ${originalFileName} to Firebase Storage. Duration: ${Date.now() - uploadStartTime}ms. Getting download URL...`, {});
-        const urlStartTime = Date.now();
-        const downloadURL = await getDownloadURL(fileStorageRef);
-        logSafe(`${actionContext} Got download URL for ${originalFileName} in ${Date.now() - urlStartTime}ms. URL: ${downloadURL}`, {});
-
-        if (typeof companionIndex === 'number' && companionFileFieldKey && updatedGuestData.mitreisende && updatedGuestData.mitreisende[companionIndex]) {
-            (updatedGuestData.mitreisende[companionIndex] as any)[companionFileFieldKey] = downloadURL;
-        } else {
-            (updatedGuestData as any)[fieldUrlKey] = downloadURL;
-        }
-
-      } catch (fileUploadError: any) {
-        let userMessage = `Dateiupload für ${originalFileName} fehlgeschlagen.`;
-        let errorCode = fileUploadError.code || "upload-error";
-         switch (errorCode) {
-            case 'storage/unauthorized': userMessage = `Berechtigungsfehler: ${originalFileName}. (Code: ${errorCode})`; break;
-            case 'storage/canceled': userMessage = `Upload abgebrochen: ${originalFileName}. (Code: ${errorCode})`; break;
-            case 'storage/no-default-bucket': userMessage = `Firebase Storage Bucket nicht gefunden. Bitte Konfiguration prüfen. (Code: ${errorCode})`; break;
-            default: userMessage += ` (Details: ${fileUploadError.message}, Code: ${errorCode})`;
-        }
-        logSafe(`${actionContext} FILE UPLOAD FAIL] Firebase Storage error for ${originalFileName}: ${userMessage}`, { error: fileUploadError, stack: (fileUploadError as Error).stack?.substring(0,500) }, 'error');
-        // Re-throw to be caught by the main try-catch of updateBookingStep
-        throw new Error(userMessage); 
-      }
-    } else if (oldFileUrl) {
-        if (typeof companionIndex === 'number' && companionFileFieldKey && updatedGuestData.mitreisende && updatedGuestData.mitreisende[companionIndex]) {
-             (updatedGuestData.mitreisende[companionIndex] as any)[companionFileFieldKey] = oldFileUrl;
-        } else {
-            (updatedGuestData as any)[fieldUrlKey] = oldFileUrl;
-        }
-      logSafe(`${actionContext} No new file for ${companionFileFieldKey || fieldUrlKey}, kept old URL: ${oldFileUrl}`, {});
-    }
-  };
-
+  if (stepNumber === 1) { // Hauptgast & Ausweis
+    fileFieldsToProcess.push({ formDataKey: 'hauptgastAusweisVorderseiteFile', guestDataUrlKey: 'hauptgastAusweisVorderseiteUrl' });
+    fileFieldsToProcess.push({ formDataKey: 'hauptgastAusweisRückseiteFile', guestDataUrlKey: 'hauptgastAusweisRückseiteUrl' });
+  } else if (stepNumber === 2 && updatedGuestData.mitreisende) { // Mitreisende
+    updatedGuestData.mitreisende.forEach((mitreisender, index) => {
+      fileFieldsToProcess.push({ formDataKey: `mitreisende_${index}_ausweisVorderseiteFile`, guestDataUrlKey: 'hauptgastAusweisVorderseiteUrl', companionIndex: index, companionUrlKey: 'hauptgastAusweisVorderseiteUrl' });
+      fileFieldsToProcess.push({ formDataKey: `mitreisende_${index}_ausweisRückseiteFile`, guestDataUrlKey: 'hauptgastAusweisRückseiteUrl', companionIndex: index, companionUrlKey: 'hauptgastAusweisRückseiteUrl' });
+    });
+  } else if (stepNumber === 4) { // Zahlungsinformationen (Beleg)
+    fileFieldsToProcess.push({ formDataKey: 'zahlungsbelegFile', guestDataUrlKey: 'zahlungsbelegUrl' });
+  }
+  
   try {
-    // Process Hauptgast files (Step 1)
-    if (stepNumber === 1) {
-        const vorderseiteFile = rawFormData['hauptgastAusweisVorderseiteFile'] as File | undefined | null;
-        const rueckseiteFile = rawFormData['hauptgastAusweisRückseiteFile'] as File | undefined | null;
-        fileUploadPromises.push(processFile(vorderseiteFile, 'hauptgastAusweisVorderseiteUrl'));
-        fileUploadPromises.push(processFile(rueckseiteFile, 'hauptgastAusweisRückseiteUrl'));
-    }
+    for (const { formDataKey, guestDataUrlKey, companionIndex, companionUrlKey } of fileFieldsToProcess) {
+      const file = rawFormData[formDataKey] as File | undefined | null;
+      let oldFileUrl: string | undefined = undefined;
 
-    // Process Mitreisende files (Step 2)
-    if (stepNumber === 2 && mitreisendeFiles && updatedGuestData.mitreisende) {
-        for (let i = 0; i < updatedGuestData.mitreisende.length; i++) {
-            const vorderseiteKey = `mitreisende_${i}_ausweisVorderseiteFile`;
-            const rueckseiteKey = `mitreisende_${i}_ausweisRückseiteFile`;
-            
-            const vorderseiteFile = mitreisendeFiles[vorderseiteKey]?.file as File | undefined | null;
-            const rueckseiteFile = mitreisendeFiles[rueckseiteKey]?.file as File | undefined | null;
+      if (typeof companionIndex === 'number' && companionUrlKey && updatedGuestData.mitreisende?.[companionIndex]) {
+        oldFileUrl = (updatedGuestData.mitreisende[companionIndex] as any)[companionUrlKey];
+      } else if (guestDataUrlKey) {
+        oldFileUrl = (currentGuestDataSnapshot as any)[guestDataUrlKey];
+      }
 
-            if (vorderseiteFile) fileUploadPromises.push(processFile(vorderseiteFile, 'hauptgastAusweisVorderseiteUrl', i, 'hauptgastAusweisVorderseiteUrl'));
-            if (rueckseiteFile) fileUploadPromises.push(processFile(rueckseiteFile, 'hauptgastAusweisRückseiteUrl', i, 'hauptgastAusweisRückseiteUrl'));
+      if (file instanceof File && file.size > 0) {
+        const fileProcessingStartTime = Date.now();
+        const originalFileName = file.name;
+        const fileExtension = originalFileName.split('.').pop();
+        const safeFileName = originalFileName.substring(0, originalFileName.length - (fileExtension ? fileExtension.length + 1 : 0)).replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const timestamp = Date.now();
+        const uniqueFileName = `${timestamp}_${safeFileName}${fileExtension ? '.' + fileExtension : ''}`;
+        
+        let filePathPrefix = `bookings/${bookingToken}`;
+        if (typeof companionIndex === 'number' && companionUrlKey) {
+          filePathPrefix += `/mitreisende/${companionIndex}/${String(companionUrlKey).replace('Url', 'File')}`;
+        } else {
+          filePathPrefix += `/${String(guestDataUrlKey).replace('Url', 'File')}`;
         }
-    }
+        const filePath = `${filePathPrefix}/${uniqueFileName}`;
+        
+        logSafe(`${actionContext} Processing NEW file for ${formDataKey}: ${originalFileName} (${file.size} bytes) to path ${filePath}`, {});
+        
+        if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.includes("firebasestorage.googleapis.com")) {
+          try {
+            const oldFileStorageRef = storageRefFB(storage, oldFileUrl);
+            await deleteObject(oldFileStorageRef);
+            logSafe(`${actionContext} Old file ${oldFileUrl} deleted successfully.`, {});
+          } catch (deleteError: any) {
+            logSafe(`${actionContext} Failed to delete old file ${oldFileUrl} for ${formDataKey}: ${deleteError.message} (Code: ${deleteError.code}). Continuing.`, {}, 'warn');
+          }
+        }
+        
+        try {
+          const fileStorageRef = storageRefFB(storage, filePath);
+          const fileBuffer = await file.arrayBuffer();
+          logSafe(`${actionContext} File buffer created for ${originalFileName}. Uploading... Duration: ${Date.now() - fileProcessingStartTime}ms. Size: ${fileBuffer.byteLength}`, {});
+          
+          const uploadStartTime = Date.now();
+          await uploadBytes(fileStorageRef, fileBuffer, { contentType: file.type });
+          logSafe(`${actionContext} Successfully uploaded ${originalFileName} to Firebase Storage. Duration: ${Date.now() - uploadStartTime}ms. Getting download URL...`, {});
+          
+          const urlStartTime = Date.now();
+          const downloadURL = await getDownloadURL(fileStorageRef);
+          logSafe(`${actionContext} Got download URL for ${originalFileName} in ${Date.now() - urlStartTime}ms. URL: ${downloadURL}`, {});
 
-    // Process Zahlungsbeleg file (Step 4 - Zahlungsinformationen)
-    if (stepNumber === 4) { // Assuming Zahlungsinformationen is step 4
-        const belegFile = rawFormData['zahlungsbelegFile'] as File | undefined | null;
-        fileUploadPromises.push(processFile(belegFile, 'zahlungsbelegUrl'));
-    }
+          if (typeof companionIndex === 'number' && companionUrlKey && updatedGuestData.mitreisende?.[companionIndex]) {
+              (updatedGuestData.mitreisende[companionIndex] as any)[companionUrlKey] = downloadURL;
+          } else if (guestDataUrlKey) {
+              (updatedGuestData as any)[guestDataUrlKey] = downloadURL;
+          }
 
-    await Promise.all(fileUploadPromises);
+        } catch (fileUploadError: any) {
+          let userMessage = `Dateiupload für ${originalFileName} fehlgeschlagen.`;
+          let errorCode = fileUploadError.code || "upload-error";
+           switch (errorCode) {
+              case 'storage/unauthorized': userMessage = `Berechtigungsfehler: ${originalFileName}. Bitte Storage Regeln prüfen. (Code: ${errorCode})`; break;
+              case 'storage/canceled': userMessage = `Upload abgebrochen: ${originalFileName}. (Code: ${errorCode})`; break;
+              case 'storage/no-default-bucket': userMessage = `Firebase Storage Bucket nicht gefunden. Bitte Konfiguration prüfen. (Code: ${errorCode})`; break;
+              default: userMessage += ` (Details: ${fileUploadError.message}, Code: ${errorCode})`;
+          }
+          logSafe(`${actionContext} FILE UPLOAD FAIL] Firebase Storage error for ${originalFileName}: ${userMessage}`, { error: fileUploadError, stack: (fileUploadError as Error).stack?.substring(0,500) }, 'error');
+          throw new Error(userMessage); 
+        }
+      } else if (oldFileUrl) {
+          if (typeof companionIndex === 'number' && companionUrlKey && updatedGuestData.mitreisende?.[companionIndex]) {
+             (updatedGuestData.mitreisende[companionIndex] as any)[companionUrlKey] = oldFileUrl;
+          } else if (guestDataUrlKey) {
+             (updatedGuestData as any)[guestDataUrlKey] = oldFileUrl;
+          }
+        logSafe(`${actionContext} No new file for ${formDataKey}, kept old URL: ${oldFileUrl}`, {});
+      }
+      // Remove File object from dataFromForm and updatedGuestData after processing
+      delete (dataFromForm as any)[formDataKey];
+      delete (updatedGuestData as any)[formDataKey];
+    }
     logSafe(`${actionContext} All file uploads processed successfully.`, {});
 
-  } catch (error: any) { // Catch errors from processFile
+  } catch (error: any) { 
     logSafe(`${actionContext} Error during file processing stage:`, { error: error.message }, 'error');
     return { ...initialFormState, message: error.message, errors: { global: [error.message] }, success: false, actionToken: serverActionToken, updatedGuestData: currentGuestDataSnapshot, currentStep: stepNumber -1 };
   }
   
-  // Remove File objects from dataFromForm and updatedGuestData after processing
-  ['hauptgastAusweisVorderseiteFile', 'hauptgastAusweisRückseiteFile', 'zahlungsbelegFile'].forEach(key => {
-    delete (dataFromForm as any)[key];
-    delete (updatedGuestData as any)[key];
-  });
   if (updatedGuestData.mitreisende) {
     updatedGuestData.mitreisende = updatedGuestData.mitreisende.map(m => {
         const newM = {...m};
-        delete (newM as any).file_vorderseite; // remove temporary file holders if any
+        delete (newM as any).file_vorderseite; 
         delete (newM as any).file_rueckseite;
+        delete (newM as any).fileName_vorderseite;
+        delete (newM as any).fileName_rueckseite;
         return newM;
     });
   }
-
 
   updatedGuestData.lastCompletedStep = Math.max(updatedGuestData.lastCompletedStep ?? -1, stepNumber - 1);
   logSafe(`${actionContext} Final merged guest data before save (file objects removed, URLs set)`, updatedGuestData);
@@ -326,7 +299,12 @@ async function updateBookingStep(
     }
   }
 
-  if (stepNumber === 5) { // Final step: Übersicht & Bestätigung (assuming 5 steps now)
+  if (stepNumber === 4) { // Zahlungsinformationen
+    updatedGuestData.zahlungsart = 'Überweisung'; // Hardcode as per new design
+  }
+
+
+  if (stepNumber === 5) { // Final step: Übersicht & Bestätigung
     if (updatedGuestData.agbAkzeptiert === true && updatedGuestData.datenschutzAkzeptiert === true) {
       updatedGuestData.submittedAt = new Date().toISOString();
       bookingUpdatesFirestore.status = "Confirmed";
@@ -374,7 +352,6 @@ export async function submitGastStammdatenAction(bookingToken: string, prevState
   const actionContext = `submitGastStammdatenAction - Token: "${bookingToken}" - ActionToken: ${serverActionToken}`;
   try {
     logSafe(actionContext + " BEGIN", { bookingToken, formDataKeys: Array.from(formData.keys())});
-    // Log file details if present
     const vorderseiteFile = formData.get('hauptgastAusweisVorderseiteFile') as File | null;
     const rueckseiteFile = formData.get('hauptgastAusweisRückseiteFile') as File | null;
     if (vorderseiteFile) logSafe(actionContext, { vorderseiteFileName: vorderseiteFile.name, vorderseiteFileSize: vorderseiteFile.size });
@@ -396,27 +373,26 @@ export async function submitMitreisendeAction(bookingToken: string, prevState: F
 
   try {
     const mitreisendeMetaJson = formData.get('mitreisendeMeta') as string;
-    if (!mitreisendeMetaJson) {
-      logSafe(actionContext + " No mitreisendeMeta found, treating as empty list submission.", {}, 'warn');
-      // Proceed as if an empty list of companions was submitted, effectively just updating the step
-      const result = await updateBookingStep(bookingToken, 2, z.object({}), formData, { mitreisende: [] });
-      logSafe(actionContext + " END (no mitreisendeMeta)", { success: result.success, message: result.message });
-      return result;
+    let parsedMitreisendeMeta: Mitreisender[] = [];
+
+    if (mitreisendeMetaJson) {
+      try {
+        parsedMitreisendeMeta = JSON.parse(mitreisendeMetaJson);
+      } catch (e) {
+        logSafe(actionContext + " Failed to parse mitreisendeMeta JSON", { error: (e as Error).message }, 'error');
+        return { ...initialFormState, message: "Fehler beim Verarbeiten der Mitreisenden-Daten.", errors: { global: ["Ungültiges Format für Mitreisende."] }, success: false, actionToken: serverActionToken, currentStep: 1 };
+      }
     }
-
-    const mitreisendeMeta: { id: string; vorname: string; nachname: string; }[] = JSON.parse(mitreisendeMetaJson);
     
-    // Validate metadata for each companion
-    const validatedMetas: Mitreisender[] = [];
     const errors: Record<string, string[]> = {};
+    const validatedMetas: Mitreisender[] = [];
 
-    for (let i = 0; i < mitreisendeMeta.length; i++) {
-        const meta = mitreisendeMeta[i];
+    for (let i = 0; i < parsedMitreisendeMeta.length; i++) {
+        const meta = parsedMitreisendeMeta[i];
         const validationResult = mitreisenderEinzelschema.safeParse(meta);
         if (validationResult.success) {
             validatedMetas.push({ id: meta.id, ...validationResult.data });
         } else {
-            validationResult.error.flatten().fieldErrors;
             Object.entries(validationResult.error.flatten().fieldErrors).forEach(([key, msgs]) => {
                 errors[`mitreisende_${i}_${key}`] = msgs as string[];
             });
@@ -425,28 +401,10 @@ export async function submitMitreisendeAction(bookingToken: string, prevState: F
 
     if (Object.keys(errors).length > 0) {
         logSafe(actionContext + " Validation FAILED for Mitreisende metadata", { errors }, 'warn');
-        return { ...initialFormState, errors, message: "Validierungsfehler bei Mitreisenden.", success: false, actionToken: serverActionToken, currentStep: 1 };
+        return { ...initialFormState, errors, message: "Validierungsfehler bei Mitreisenden.", success: false, actionToken: serverActionToken, currentStep: 1, updatedGuestData: prevState.updatedGuestData };
     }
-
-    // Prepare files for updateBookingStep
-    const mitreisendeFilesForUpdate: Record<string, Record<string, File | null>> = {};
-     mitreisendeMeta.forEach((meta, index) => {
-        const vorderseiteFile = formData.get(`mitreisende_${index}_ausweisVorderseiteFile`) as File | null;
-        const rueckseiteFile = formData.get(`mitreisende_${index}_ausweisRückseiteFile`) as File | null;
-        
-        if (vorderseiteFile || rueckseiteFile) {
-           mitreisendeFilesForUpdate[`mitreisende_${index}`] = {
-                ausweisVorderseiteFile: vorderseiteFile,
-                ausweisRückseiteFile: rueckseiteFile,
-           };
-        }
-        if (vorderseiteFile) logSafe(actionContext, { [`mitreisende_${index}_vorderseiteName`]: vorderseiteFile.name, [`mitreisende_${index}_vorderseiteSize`]: vorderseiteFile.size });
-        if (rueckseiteFile) logSafe(actionContext, { [`mitreisende_${index}_rueckseiteName`]: rueckseiteFile.name, [`mitreisende_${index}_rueckseiteSize`]: rueckseiteFile.size });
-    });
     
-
-    // Using a minimal schema for formData itself as files are handled inside updateBookingStep
-    const result = await updateBookingStep(bookingToken, 2, z.object({}), formData, {}, validatedMetas, mitreisendeFilesForUpdate);
+    const result = await updateBookingStep(bookingToken, 2, z.object({}), formData, {}, validatedMetas);
     logSafe(actionContext + " END", { success: result.success, message: result.message });
     return result;
 
@@ -479,7 +437,7 @@ export async function submitZahlungsinformationenAction(bookingToken: string, pr
     const zahlungsbelegFile = formData.get('zahlungsbelegFile') as File | null;
     if (zahlungsbelegFile) logSafe(actionContext, { zahlungsbelegFileName: zahlungsbelegFile.name, zahlungsbelegFileSize: zahlungsbelegFile.size });
     
-    const result = await updateBookingStep(bookingToken, 4, zahlungsinformationenSchema, formData, {});
+    const result = await updateBookingStep(bookingToken, 4, zahlungsinformationenSchema, formData, { zahlungsart: 'Überweisung'});
     logSafe(actionContext + " END", { success: result.success, message: result.message });
     return result;
   } catch (error: any) {
@@ -609,21 +567,21 @@ export async function createBookingAction(prevState: FormState | any, formData: 
       rooms: bookingData.roomsData,
       interneBemerkungen: bookingData.interneBemerkungen || '',
       roomIdentifier: roomIdentifierString,
-      guestSubmittedData: { lastCompletedStep: -1 } // Initial empty guest data
+      guestSubmittedData: { lastCompletedStep: -1 } 
     };
 
-    const createdBookingId = await addBookingToFirestore(newBookingPayload);
+    const createdBooking = await addBookingToFirestore(newBookingPayload);
 
-    if (!createdBookingId) {
+    if (!createdBooking || !createdBooking.id) {
       const errorMsg = "Datenbankfehler: Buchung konnte nicht erstellt werden.";
       logSafe(`${actionContext} FAIL]`, { error: errorMsg, details: "addBookingToFirestore returned null or no ID." }, 'error');
       return { ...initialFormState, message: errorMsg, errors: { global: ["Fehler beim Speichern der Buchung."] }, success: false, actionToken: serverActionToken, bookingToken: null };
     }
-    logSafe(`${actionContext} SUCCESS] New booking added to Firestore. Token: ${newBookingToken}. ID: ${createdBookingId}. Total time: ${Date.now() - startTime}ms.`, {});
+    logSafe(`${actionContext} SUCCESS] New booking added to Firestore. Token: ${newBookingToken}. ID: ${createdBooking.id}. Total time: ${Date.now() - startTime}ms.`, {});
 
     revalidatePath("/admin/dashboard", "layout");
     revalidatePath(`/buchung/${newBookingToken}`, "page");
-    revalidatePath(`/admin/bookings/${createdBookingId}`, "page");
+    revalidatePath(`/admin/bookings/${createdBooking.id}`, "page");
 
 
     return {
@@ -656,11 +614,13 @@ export async function deleteBookingsAction(bookingIds: string[]): Promise<{ succ
       return { success: false, message: "Keine Buchungs-IDs zum Löschen angegeben.", actionToken: serverActionToken };
     }
 
-    const deleteSuccess = await deleteBookingsFromFirestoreByIds(bookingIds); // This now also handles Storage file deletions
+    const deleteSuccess = await deleteBookingsFromFirestoreByIds(bookingIds); 
 
     if (deleteSuccess) {
       logSafe(`${actionContext} SUCCESS] ${bookingIds.length} booking(s) and associated files handled. Total time: ${Date.now() - startTime}ms.`, {});
       revalidatePath("/admin/dashboard", "layout");
+      // Revalidate individual booking pages if needed, though they won't exist anymore.
+      bookingIds.forEach(id => revalidatePath(`/admin/bookings/${id}`, "page"));
       return { success: true, message: `${bookingIds.length} Buchung(en) erfolgreich gelöscht.`, actionToken: serverActionToken };
     } else {
       const errorMsg = "Fehler beim Löschen der Buchungen aus Firestore.";
@@ -672,3 +632,4 @@ export async function deleteBookingsAction(bookingIds: string[]): Promise<{ succ
     return { success: false, message: `Unerwarteter Serverfehler beim Löschen (Code SA-DELETE-CATCH): ${error.message}`, actionToken: serverActionToken };
   }
 }
+

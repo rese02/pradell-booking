@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, ShieldCheck, Info, CreditCard, ShieldQuestion, FileText, BookUser, Landmark, Euro, Percent, CheckCircle2, WalletCards, User as UserIcon, Image as ImageIcon, Upload, CalendarIcon as LucideCalendarIcon, ChevronRight, ChevronLeft, Users2, Trash2, PlusCircle } from "lucide-react"; // Added Users2, Trash2, PlusCircle
-import { Badge } from "@/components/ui/badge"; // Ensured Badge is imported
+import { AlertCircle, Check, CheckCircle, FileUp, Loader2, UserCircle, Mail, Phone, CalendarDays, ShieldCheck, Info, CreditCard, ShieldQuestion, FileText, BookUser, Landmark, Euro, Percent, CheckCircle2, WalletCards, User as UserIcon, Image as ImageIcon, Upload, CalendarIcon as LucideCalendarIcon, ChevronRight, ChevronLeft, Users2, Trash2, PlusCircle, Copy, CloudUpload } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import {
   submitGastStammdatenAction,
-  submitMitreisendeAction, // Placeholder for now
+  submitMitreisendeAction,
   submitPaymentAmountSelectionAction,
   submitZahlungsinformationenAction,
   submitEndgueltigeBestaetigungAction
@@ -25,7 +25,7 @@ import { PradellLogo } from "@/components/shared/PradellLogo";
 import Link from "next/link";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import NextImage from "next/image"; // Using NextImage alias
+import NextImage from "next/image";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 
@@ -73,7 +73,7 @@ const formatCurrency = (amount?: number) => {
 
 interface StepContentProps {
   bookingToken: string;
-  initialBookingDetails: Booking; // Now always Booking, not null
+  initialBookingDetails: Booking;
   guestData?: GuestSubmittedData | null;
   formState: FormState;
   setLatestGuestSubmittedData: React.Dispatch<React.SetStateAction<GuestSubmittedData | null | undefined>>;
@@ -87,34 +87,59 @@ const HauptgastDetailsStep: React.FC<StepContentProps> = ({ initialBookingDetail
 
   useEffect(() => {
     if (guestData?.hauptgastAusweisVorderseiteUrl) {
-      setVorderseiteFileName(guestData.hauptgastAusweisVorderseiteUrl.split('/').pop()?.split('?')[0]?.substring(14) || "Datei hochgeladen");
+        if (guestData.hauptgastAusweisVorderseiteUrl.startsWith('mock-file-url:')) {
+            setVorderseiteFileName(decodeURIComponent(guestData.hauptgastAusweisVorderseiteUrl.substring("mock-file-url:".length)));
+        } else if (guestData.hauptgastAusweisVorderseiteUrl.includes('firebasestorage.googleapis.com')) {
+             try {
+                const url = new URL(guestData.hauptgastAusweisVorderseiteUrl);
+                const pathParts = url.pathname.split('/');
+                const encodedName = pathParts.pop()?.split('?')[0] || "Datei hochgeladen";
+                setVorderseiteFileName(decodeURIComponent(encodedName.substring(encodedName.indexOf('_') + 1)));
+            } catch (e) { setVorderseiteFileName("Datei hochgeladen"); }
+        } else {
+            setVorderseiteFileName("Datei hochgeladen");
+        }
+    } else {
+        setVorderseiteFileName("Keine Datei ausgewählt");
     }
-     if (guestData?.hauptgastAusweisRückseiteUrl) {
-      setRueckseiteFileName(guestData.hauptgastAusweisRückseiteUrl.split('/').pop()?.split('?')[0]?.substring(14) || "Datei hochgeladen");
+
+    if (guestData?.hauptgastAusweisRückseiteUrl) {
+       if (guestData.hauptgastAusweisRückseiteUrl.startsWith('mock-file-url:')) {
+            setRueckseiteFileName(decodeURIComponent(guestData.hauptgastAusweisRückseiteUrl.substring("mock-file-url:".length)));
+        } else if (guestData.hauptgastAusweisRückseiteUrl.includes('firebasestorage.googleapis.com')) {
+            try {
+                const url = new URL(guestData.hauptgastAusweisRückseiteUrl);
+                const pathParts = url.pathname.split('/');
+                const encodedName = pathParts.pop()?.split('?')[0] || "Datei hochgeladen";
+                setRueckseiteFileName(decodeURIComponent(encodedName.substring(encodedName.indexOf('_') + 1)));
+            } catch (e) { setRueckseiteFileName("Datei hochgeladen"); }
+        } else {
+            setRueckseiteFileName("Datei hochgeladen");
+        }
+    } else {
+        setRueckseiteFileName("Keine Datei ausgewählt");
     }
   }, [guestData?.hauptgastAusweisVorderseiteUrl, guestData?.hauptgastAusweisRückseiteUrl]);
 
 
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={formState.actionToken || ''} />
-      
+        <Card className="bg-muted/30">
+            <CardHeader>
+                <CardTitle className="text-lg">Ihre Buchungsdetails</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                <div><strong className="block text-xs text-muted-foreground">Check-in</strong> {formatDateDisplay(initialBookingDetails.checkInDate)}</div>
+                <div><strong className="block text-xs text-muted-foreground">Check-out</strong> {formatDateDisplay(initialBookingDetails.checkOutDate)}</div>
+                <div className="col-span-2"><strong className="block text-xs text-muted-foreground">Zimmer</strong> {initialBookingDetails.roomIdentifier}</div>
+                <div className="col-span-2"><strong className="block text-xs text-muted-foreground">Preis</strong> {formatCurrency(initialBookingDetails.price)}</div>
+            </CardContent>
+        </Card>
+        
+      <h3 className="text-lg font-semibold">Ihre Daten (Hauptbucher)</h3>
+      <p className="text-sm text-muted-foreground">Bitte geben Sie Ihre persönlichen Daten ein.</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
         <div>
-          <Label htmlFor="anrede" className="flex items-center text-sm"><UserIcon className="w-4 h-4 mr-2 text-muted-foreground" />Anrede</Label>
-          <Select name="anrede" defaultValue={guestData?.anrede || ""}>
-            <SelectTrigger id="anrede" className="mt-1">
-              <SelectValue placeholder="Anrede wählen" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="Herr">Herr</SelectItem>
-              <SelectItem value="Frau">Frau</SelectItem>
-              <SelectItem value="Divers">Divers</SelectItem>
-            </SelectContent>
-          </Select>
-          {getErrorMessage("anrede", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("anrede", formState.errors)}</p>}
-        </div>
-         <div>
           <Label htmlFor="gastVorname" className="flex items-center text-sm"><UserIcon className="w-4 h-4 mr-2 text-muted-foreground" />Vorname *</Label>
           <Input id="gastVorname" name="gastVorname" defaultValue={guestData?.gastVorname || initialBookingDetails?.guestFirstName || ""} placeholder="Max" className="mt-1"/>
           {getErrorMessage("gastVorname", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("gastVorname", formState.errors)}</p>}
@@ -123,11 +148,6 @@ const HauptgastDetailsStep: React.FC<StepContentProps> = ({ initialBookingDetail
           <Label htmlFor="gastNachname" className="flex items-center text-sm"><UserIcon className="w-4 h-4 mr-2 text-muted-foreground" />Nachname *</Label>
           <Input id="gastNachname" name="gastNachname" defaultValue={guestData?.gastNachname || initialBookingDetails?.guestLastName || ""} placeholder="Mustermann" className="mt-1"/>
           {getErrorMessage("gastNachname", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("gastNachname", formState.errors)}</p>}
-        </div>
-        <div>
-            <Label htmlFor="geburtsdatum" className="flex items-center text-sm"><LucideCalendarIcon className="w-4 h-4 mr-2 text-muted-foreground" />Geburtsdatum</Label>
-            <Input id="geburtsdatum" name="geburtsdatum" type="date" defaultValue={formatDateForInput(guestData?.geburtsdatum)} className="mt-1"/>
-            {getErrorMessage("geburtsdatum", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("geburtsdatum", formState.errors)}</p>}
         </div>
         <div>
           <Label htmlFor="email" className="flex items-center text-sm"><Mail className="w-4 h-4 mr-2 text-muted-foreground" />E-Mail *</Label>
@@ -148,35 +168,34 @@ const HauptgastDetailsStep: React.FC<StepContentProps> = ({ initialBookingDetail
       
       <Separator className="my-6"/>
 
+      <h3 className="text-lg font-semibold">Ausweisdokumente (Optional)</h3>
       <div className="space-y-4">
-        <h3 className="text-md font-semibold">Ausweisdokument (Vorderseite)</h3>
+        <Label className="text-sm font-medium">Vorderseite</Label>
         <div className="flex items-center gap-3">
             <Button asChild variant="outline" size="sm" className="shrink-0">
                 <Label htmlFor="hauptgastAusweisVorderseiteFile" className="cursor-pointer flex items-center"><Upload className="w-4 h-4 mr-2" /> Datei auswählen</Label>
             </Button>
             <Input id="hauptgastAusweisVorderseiteFile" name="hauptgastAusweisVorderseiteFile" type="file" className="hidden" onChange={(e) => setVorderseiteFileName(e.target.files?.[0]?.name || "Keine Datei ausgewählt")} accept="image/jpeg,image/png,image/webp,application/pdf" />
-            <span className="text-sm text-muted-foreground truncate">{vorderseiteFileName}</span>
+            <span className="text-sm text-muted-foreground truncate max-w-xs">{vorderseiteFileName}</span>
         </div>
         <p className="text-xs text-muted-foreground">Foto eines gültigen Ausweisdokuments aufnehmen oder hochladen. Max. 10MB (JPG, PNG, PDF)</p>
         {getErrorMessage("hauptgastAusweisVorderseiteFile", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisVorderseiteFile", formState.errors)}</p>}
       </div>
 
       <div className="space-y-4">
-        <h3 className="text-md font-semibold">Ausweisdokument (Rückseite)</h3>
+        <Label className="text-sm font-medium">Rückseite</Label>
          <div className="flex items-center gap-3">
             <Button asChild variant="outline" size="sm" className="shrink-0">
                 <Label htmlFor="hauptgastAusweisRückseiteFile" className="cursor-pointer flex items-center"><Upload className="w-4 h-4 mr-2" /> Datei auswählen</Label>
             </Button>
             <Input id="hauptgastAusweisRückseiteFile" name="hauptgastAusweisRückseiteFile" type="file" className="hidden" onChange={(e) => setRueckseiteFileName(e.target.files?.[0]?.name || "Keine Datei ausgewählt")} accept="image/jpeg,image/png,image/webp,application/pdf" />
-            <span className="text-sm text-muted-foreground truncate">{rueckseiteFileName}</span>
+            <span className="text-sm text-muted-foreground truncate max-w-xs">{rueckseiteFileName}</span>
         </div>
         <p className="text-xs text-muted-foreground">Max. 10MB (JPG, PNG, PDF)</p>
         {getErrorMessage("hauptgastAusweisRückseiteFile", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("hauptgastAusweisRückseiteFile", formState.errors)}</p>}
       </div>
-
-      <Separator className="my-6"/>
       
-      <div className="p-4 border border-muted rounded-lg bg-muted/20 text-sm text-muted-foreground flex items-start gap-3">
+      <div className="p-4 border border-muted rounded-lg bg-muted/20 text-sm text-muted-foreground flex items-start gap-3 mt-8">
         <ShieldCheck className="w-5 h-5 mt-0.5 text-primary flex-shrink-0"/>
         <p>Die Vertraulichkeit und der Schutz Ihrer persönlichen Daten haben für uns höchste Priorität. Ihre übermittelten Ausweisdokumente und Fotos werden von uns gemäß den geltenden Datenschutzgesetzen, insbesondere der Datenschutz-Grundverordnung (DSGVO), behandelt.</p>
       </div>
@@ -193,17 +212,25 @@ interface CompanionFormState extends MitreisenderData {
 }
 
 const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, guestData, formState, setLatestGuestSubmittedData }) => {
-  const [companions, setCompanions] = useState<CompanionFormState[]>(guestData?.mitreisende || []);
+  const [companions, setCompanions] = useState<CompanionFormState[]>([]);
 
-  useEffect(() => {
-    // Initialize filenames if URLs are present from DB
-    setCompanions(
-      (guestData?.mitreisende || []).map(c => ({
-        ...c,
-        fileName_vorderseite: c.hauptgastAusweisVorderseiteUrl ? c.hauptgastAusweisVorderseiteUrl.split('/').pop()?.split('?')[0]?.substring(14) || "Datei hochgeladen" : "Keine Datei ausgewählt",
-        fileName_rueckseite: c.hauptgastAusweisRückseiteUrl ? c.hauptgastAusweisRückseiteUrl.split('/').pop()?.split('?')[0]?.substring(14) || "Datei hochgeladen" : "Keine Datei ausgewählt",
-      }))
-    );
+   useEffect(() => {
+    const initialCompanions = (guestData?.mitreisende || []).map(c => {
+        let vorderseiteName = "Keine Datei ausgewählt";
+        if (c.hauptgastAusweisVorderseiteUrl) {
+            if (c.hauptgastAusweisVorderseiteUrl.startsWith('mock-file-url:')) vorderseiteName = decodeURIComponent(c.hauptgastAusweisVorderseiteUrl.substring("mock-file-url:".length));
+            else if (c.hauptgastAusweisVorderseiteUrl.includes('firebasestorage.googleapis.com')) try { const url = new URL(c.hauptgastAusweisVorderseiteUrl); const pathParts = url.pathname.split('/'); const encodedName = pathParts.pop()?.split('?')[0] || "Datei hochgeladen"; vorderseiteName = decodeURIComponent(encodedName.substring(encodedName.indexOf('_') + 1)); } catch (e) { vorderseiteName = "Datei hochgeladen"; }
+            else vorderseiteName = "Datei hochgeladen";
+        }
+        let rueckseiteName = "Keine Datei ausgewählt";
+         if (c.hauptgastAusweisRückseiteUrl) {
+            if (c.hauptgastAusweisRückseiteUrl.startsWith('mock-file-url:')) rueckseiteName = decodeURIComponent(c.hauptgastAusweisRückseiteUrl.substring("mock-file-url:".length));
+            else if (c.hauptgastAusweisRückseiteUrl.includes('firebasestorage.googleapis.com')) try { const url = new URL(c.hauptgastAusweisRückseiteUrl); const pathParts = url.pathname.split('/'); const encodedName = pathParts.pop()?.split('?')[0] || "Datei hochgeladen"; rueckseiteName = decodeURIComponent(encodedName.substring(encodedName.indexOf('_') + 1)); } catch (e) { rueckseiteName = "Datei hochgeladen"; }
+            else rueckseiteName = "Datei hochgeladen";
+        }
+        return { ...c, fileName_vorderseite: vorderseiteName, fileName_rueckseite: rueckseiteName };
+    });
+    setCompanions(initialCompanions);
   }, [guestData?.mitreisende]);
 
 
@@ -228,60 +255,34 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, gu
     );
   };
   
-  const getPersonenText = (room: typeof initialBookingDetails.rooms extends (infer R)[] ? R : never) => {
+  const getPersonenText = (room: typeof initialBookingDetails.rooms extends (infer R)[] ? R : never): string => {
     if (!room) return "N/A";
-    let text = `${room.erwachsene} Erw.`;
-    if (room.kinder && room.kinder > 0) text += `, ${room.kinder} Ki.`;
-    if (room.kleinkinder && room.kleinkinder > 0) text += `, ${room.kleinkinder} Kk.`;
-    return text;
+    let textParts: string[] = [];
+    if (room.erwachsene && room.erwachsene > 0) textParts.push(`${room.erwachsene} Erw.`);
+    if (room.kinder && room.kinder > 0) textParts.push(`${room.kinder} Ki.`);
+    if (room.kleinkinder && room.kleinkinder > 0) textParts.push(`${room.kleinkinder} Kk.`);
+    return textParts.length > 0 ? textParts.join(', ') : "Keine Personen";
   };
 
+  const gesamtPersonen = initialBookingDetails.rooms?.reduce((sum, room) => sum + (room.erwachsene || 0) + (room.kinder || 0) + (room.kleinkinder || 0), 0) || 0;
 
-  const prepareFormDataForAction = (formData: FormData) => {
-    const mitreisendeMeta = companions.map(c => ({id: c.id, vorname: c.vorname, nachname: c.nachname}));
-    formData.append('mitreisendeMeta', JSON.stringify(mitreisendeMeta));
-
-    companions.forEach((comp, index) => {
-        if (comp.file_vorderseite) {
-            formData.append(`mitreisende_${index}_ausweisVorderseiteFile`, comp.file_vorderseite);
-        }
-        if (comp.file_rueckseite) {
-            formData.append(`mitreisende_${index}_ausweisRückseiteFile`, comp.file_rueckseite);
-        }
-    });
-    return formData;
-  };
-
-
-  // This function will be passed to the form's onSubmit if needed, or used with useActionState
-  const handleSubmitMitreisende = async (formData: FormData) => {
-    const preparedFormData = prepareFormDataForAction(new FormData()); // Use a fresh FormData to append based on state
-    // Then call the actual server action with preparedFormData
-    // This part is tricky with useActionState, which expects the form to directly provide data.
-    // We might need to manually trigger the action after preparing FormData, or restructure.
-    // For now, the form will submit, and the server action will parse based on `mitreisendeMeta` and file names.
-  };
-  
 
   return (
     <div className="space-y-6">
-       <input type="hidden" name="currentActionToken" value={formState.actionToken || ''} />
-       {/* Hidden input for Mitreisende metadata */}
        <input type="hidden" name="mitreisendeMeta" value={JSON.stringify(companions.map(c => ({id: c.id, vorname: c.vorname, nachname: c.nachname})))} />
-
 
       <Card className="bg-muted/30">
         <CardHeader><CardTitle className="text-lg">Ihre Buchungsdetails</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
             <div><strong className="block text-xs text-muted-foreground">Check-in</strong> {formatDateDisplay(initialBookingDetails.checkInDate)}</div>
             <div><strong className="block text-xs text-muted-foreground">Check-out</strong> {formatDateDisplay(initialBookingDetails.checkOutDate)}</div>
-            <div><strong className="block text-xs text-muted-foreground">Preis</strong> {formatCurrency(initialBookingDetails.price)}</div>
+            <div><strong className="block text-xs text-muted-foreground">Gesamtpreis</strong> {formatCurrency(initialBookingDetails.price)}</div>
             <div><strong className="block text-xs text-muted-foreground">Verpflegung</strong> {initialBookingDetails.verpflegung || "Keine"}</div>
           </div>
           {initialBookingDetails.rooms?.map((room, index) => (
              <div key={index} className="pt-2 mt-2 border-t border-muted/50">
-                <strong className="block text-xs text-muted-foreground">Hauptzimmer {initialBookingDetails.rooms && initialBookingDetails.rooms.length > 1 ? index +1 : ''}</strong>
+                <strong className="block text-xs text-muted-foreground">Zimmer {initialBookingDetails.rooms && initialBookingDetails.rooms.length > 1 ? index +1 : ''}</strong>
                 Typ: {room.zimmertyp}, Personen: {getPersonenText(room)}
              </div>
           ))}
@@ -297,7 +298,9 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, gu
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Weitere Mitreisende</CardTitle>
-          <CardDescription>Fügen Sie hier die Daten aller weiteren Personen hinzu (optional).</CardDescription>
+          <CardDescription>
+            Fügen Sie hier die Daten aller weiteren Personen hinzu (optional). Ihre Buchung umfasst insgesamt {gesamtPersonen} Person(en) (inkl. Hauptgast).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {companions.length === 0 && (
@@ -305,19 +308,19 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, gu
           )}
           {companions.map((comp, index) => (
             <div key={comp.id} className="p-4 border rounded-md relative space-y-4 bg-background shadow-sm">
-              <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleRemoveCompanion(comp.id)}>
+              <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleRemoveCompanion(comp.id!)}>
                 <Trash2 className="h-4 w-4" /> <span className="sr-only">Gast entfernen</span>
               </Button>
               <h4 className="font-medium text-md">Mitreisender {index + 1}</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor={`mitreisende_${index}_vorname`}>Vorname *</Label>
-                  <Input id={`mitreisende_${index}_vorname`} name={`mitreisende_${index}_vorname`} value={comp.vorname} onChange={(e) => handleCompanionChange(comp.id, 'vorname', e.target.value)} className="mt-1" />
+                  <Input id={`mitreisende_${index}_vorname`} name={`mitreisende_${index}_vorname`} value={comp.vorname} onChange={(e) => handleCompanionChange(comp.id!, 'vorname', e.target.value)} className="mt-1" />
                   {getErrorMessage(`mitreisende_${index}_vorname`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende_${index}_vorname`, formState.errors)}</p>}
                 </div>
                 <div>
                   <Label htmlFor={`mitreisende_${index}_nachname`}>Nachname *</Label>
-                  <Input id={`mitreisende_${index}_nachname`} name={`mitreisende_${index}_nachname`} value={comp.nachname} onChange={(e) => handleCompanionChange(comp.id, 'nachname', e.target.value)} className="mt-1" />
+                  <Input id={`mitreisende_${index}_nachname`} name={`mitreisende_${index}_nachname`} value={comp.nachname} onChange={(e) => handleCompanionChange(comp.id!, 'nachname', e.target.value)} className="mt-1" />
                    {getErrorMessage(`mitreisende_${index}_nachname`, formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage(`mitreisende_${index}_nachname`, formState.errors)}</p>}
                 </div>
               </div>
@@ -329,7 +332,7 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, gu
                      <Button asChild variant="outline" size="sm" className="shrink-0">
                        <Label htmlFor={`mitreisende_${index}_ausweisVorderseiteFile`} className="cursor-pointer flex items-center"><Upload className="w-3 h-3 mr-1.5" /> Wählen</Label>
                      </Button>
-                     <Input id={`mitreisende_${index}_ausweisVorderseiteFile`} name={`mitreisende_${index}_ausweisVorderseiteFile`} type="file" className="hidden" onChange={(e) => handleCompanionFileChange(comp.id, 'file_vorderseite', e.target.files?.[0] || null)} accept="image/jpeg,image/png,image/webp,application/pdf" />
+                     <Input id={`mitreisende_${index}_ausweisVorderseiteFile`} name={`mitreisende_${index}_ausweisVorderseiteFile`} type="file" className="hidden" onChange={(e) => handleCompanionFileChange(comp.id!, 'file_vorderseite', e.target.files?.[0] || null)} accept="image/jpeg,image/png,image/webp,application/pdf" />
                      <span className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-xs">{comp.fileName_vorderseite}</span>
                    </div>
                 </div>
@@ -339,7 +342,7 @@ const MitreisendeStep: React.FC<StepContentProps> = ({ initialBookingDetails, gu
                      <Button asChild variant="outline" size="sm" className="shrink-0">
                        <Label htmlFor={`mitreisende_${index}_ausweisRückseiteFile`} className="cursor-pointer flex items-center"><Upload className="w-3 h-3 mr-1.5" /> Wählen</Label>
                      </Button>
-                     <Input id={`mitreisende_${index}_ausweisRückseiteFile`} name={`mitreisende_${index}_ausweisRückseiteFile`} type="file" className="hidden" onChange={(e) => handleCompanionFileChange(comp.id, 'file_rueckseite', e.target.files?.[0] || null)} accept="image/jpeg,image/png,image/webp,application/pdf" />
+                     <Input id={`mitreisende_${index}_ausweisRückseiteFile`} name={`mitreisende_${index}_ausweisRückseiteFile`} type="file" className="hidden" onChange={(e) => handleCompanionFileChange(comp.id!, 'file_rueckseite', e.target.files?.[0] || null)} accept="image/jpeg,image/png,image/webp,application/pdf" />
                      <span className="text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-xs">{comp.fileName_rueckseite}</span>
                    </div>
                 </div>
@@ -372,7 +375,6 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ initialBookingDe
 
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={formState.actionToken || ''} />
       <div>
         <h2 className="text-xl font-semibold">Zahlungssumme wählen</h2>
         <p className="text-sm text-muted-foreground">Wählen Sie Ihre bevorzugte Zahlungssumme.</p>
@@ -387,7 +389,7 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ initialBookingDe
           >
             <div className="flex items-center justify-between w-full mb-2">
               <span className="font-semibold">Anzahlung (30%)</span>
-              <CheckCircle2 className={cn("h-5 w-5 text-primary", defaultSelection === "downpayment" ? "opacity-100" : "opacity-0" )} />
+              <CheckCircle2 className={cn("h-5 w-5 text-primary opacity-0", "peer-data-[state=checked]:opacity-100" )} />
             </div>
             <p className="text-2xl font-bold">{formatCurrency(anzahlungsbetrag)}</p>
           </Label>
@@ -400,7 +402,7 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ initialBookingDe
           >
              <div className="flex items-center justify-between w-full mb-2">
               <span className="font-semibold">Gesamtbetrag (100%)</span>
-              <CheckCircle2 className={cn("h-5 w-5 text-primary", defaultSelection === "full_amount" ? "opacity-100" : "opacity-0" )} />
+              <CheckCircle2 className={cn("h-5 w-5 text-primary opacity-0", "peer-data-[state=checked]:opacity-100" )} />
             </div>
             <p className="text-2xl font-bold">{formatCurrency(gesamtbetrag)}</p>
           </Label>
@@ -412,13 +414,27 @@ const ZahlungssummeWaehlenStep: React.FC<StepContentProps> = ({ initialBookingDe
 };
 
 
-// --- Step 4: Zahlungsinformationen ---
+// --- Step 4: Zahlungsinformationen (Banküberweisung) ---
 const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ initialBookingDetails, guestData, formState }) => {
+  const { toast } = useToast();
   const [fileNameBeleg, setFileNameBeleg] = useState<string>(guestData?.zahlungsbelegUrl ? "Datei bereits hochgeladen" : "Keine Datei ausgewählt");
 
- useEffect(() => {
+  useEffect(() => {
     if (guestData?.zahlungsbelegUrl) {
-      setFileNameBeleg(guestData.zahlungsbelegUrl.split('/').pop()?.split('?')[0]?.substring(14) || "Datei hochgeladen");
+        if (guestData.zahlungsbelegUrl.startsWith('mock-file-url:')) {
+            setFileNameBeleg(decodeURIComponent(guestData.zahlungsbelegUrl.substring("mock-file-url:".length)));
+        } else if (guestData.zahlungsbelegUrl.includes('firebasestorage.googleapis.com')) {
+            try {
+                const url = new URL(guestData.zahlungsbelegUrl);
+                const pathParts = url.pathname.split('/');
+                const encodedName = pathParts.pop()?.split('?')[0] || "Datei hochgeladen";
+                setFileNameBeleg(decodeURIComponent(encodedName.substring(encodedName.indexOf('_') + 1)));
+            } catch (e) { setFileNameBeleg("Datei hochgeladen"); }
+        } else {
+            setFileNameBeleg("Datei hochgeladen");
+        }
+    } else {
+      setFileNameBeleg("Keine Datei ausgewählt");
     }
   }, [guestData?.zahlungsbelegUrl]);
 
@@ -430,45 +446,80 @@ const ZahlungsinformationenStep: React.FC<StepContentProps> = ({ initialBookingD
 
   const zuZahlenderBetrag = guestData?.paymentAmountSelection === 'downpayment' ? anzahlungsbetrag : (initialBookingDetails?.price || 0);
 
+  const bankDetails = {
+    bankName: "Raiffeisen Überwasser",
+    kontoName: "Pradell GmbH",
+    iban: "IT74T3467673600007473467673", // Example IBAN
+    swift: "RZBRIT2BXXX", // Example Swift
+  };
+
+  const copyToClipboard = async (text: string, fieldName: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Kopiert!", description: `${fieldName} wurde in die Zwischenablage kopiert.` });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Fehler", description: "Konnte nicht in die Zwischenablage kopieren." });
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={formState.actionToken || ''} />
-      <div>
-        <h2 className="text-xl font-semibold">Zahlungsinformationen</h2>
-        <p className="text-sm text-muted-foreground">Bitte geben Sie die Details Ihrer Zahlung an.</p>
-      </div>
-      <div>
-        <Label>Zu zahlender Betrag</Label>
-        <Input value={formatCurrency(zuZahlenderBetrag)} readOnly className="mt-1 bg-muted/50" />
-        <Input type="hidden" name="zahlungsbetrag" value={zuZahlenderBetrag.toString()} />
-        { guestData?.paymentAmountSelection === 'downpayment' && <p className="text-xs text-muted-foreground mt-1">Der Restbetrag ist vor Ort im Hotel zu begleichen.</p>}
-      </div>
-      <div>
-        <Label htmlFor="zahlungsart">Zahlungsart *</Label>
-        <Select name="zahlungsart" defaultValue={guestData?.zahlungsart || "Überweisung"}>
-          <SelectTrigger id="zahlungsart" className="mt-1"><SelectValue placeholder="Zahlungsart wählen" /></SelectTrigger>
-          <SelectContent><SelectItem value="Überweisung">Überweisung</SelectItem></SelectContent>
-        </Select>
-        {getErrorMessage("zahlungsart", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsart", formState.errors)}</p>}
-      </div>
-      <div>
-        <Label htmlFor="zahlungsdatum">Datum der Zahlung *</Label>
-        <Input id="zahlungsdatum" name="zahlungsdatum" type="date" defaultValue={formatDateForInput(guestData?.zahlungsdatum)} className="mt-1"/>
-        {getErrorMessage("zahlungsdatum", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsdatum", formState.errors)}</p>}
-      </div>
-      <div>
-        <Label htmlFor="zahlungsbelegFile" className="block mb-1 text-sm font-medium">Zahlungsbeleg hochladen *</Label>
-        <div className="flex items-center gap-3">
-          <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Label htmlFor="zahlungsbelegFile" className="cursor-pointer flex items-center"><Upload className="w-4 h-4 mr-2" /> Datei wählen</Label>
-          </Button>
-          <Input id="zahlungsbelegFile" name="zahlungsbelegFile" type="file" className="hidden" onChange={(e) => setFileNameBeleg(e.target.files?.[0]?.name || "Keine Datei ausgewählt")} accept="image/jpeg,image/png,image/webp,application/pdf" />
-          <span className="text-sm text-muted-foreground truncate">{fileNameBeleg}</span>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">Max. 10MB (JPG, PNG, PDF). Erst nach Upload und Validierung des Belegs wird die Buchung komplett bestätigt.</p>
+    <div className="space-y-6 text-center">
+      <PradellLogo className="mx-auto mb-4" />
+      <h2 className="text-3xl font-bold">Banküberweisung</h2>
+      <Landmark className="h-12 w-12 text-primary mx-auto my-4" />
+      <p className="text-muted-foreground">
+        Fast geschafft! Bitte führen Sie die Überweisung durch und laden Sie anschließend Ihren Zahlungsbeleg hoch.
+      </p>
+
+      <Card className="text-left shadow-md">
+        <CardContent className="pt-6 space-y-3">
+          {Object.entries(bankDetails).map(([key, value]) => (
+            <div key={key} className="flex justify-between items-center">
+              <div>
+                <span className="text-sm text-muted-foreground block">
+                  {key === 'bankName' && 'Bank Name'}
+                  {key === 'kontoName' && 'Konto Name'}
+                  {key === 'iban' && 'IBAN'}
+                  {key === 'swift' && 'Swift'}
+                </span>
+                <span className="font-medium">{value}</span>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => copyToClipboard(value, key)}>
+                <Copy className="h-4 w-4 mr-2" /> Kopieren
+              </Button>
+            </div>
+          ))}
+          <div className="flex justify-between items-center pt-2 border-t">
+            <div>
+              <span className="text-sm text-muted-foreground block">Betrag</span>
+              <span className="font-bold text-lg">{formatCurrency(zuZahlenderBetrag)}</span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => copyToClipboard(zuZahlenderBetrag.toString(), 'Betrag')}>
+              <Copy className="h-4 w-4 mr-2" /> Kopieren
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+      { guestData?.paymentAmountSelection === 'downpayment' && <p className="text-xs text-center text-muted-foreground -mt-2">Der Restbetrag ist vor Ort im Hotel zu begleichen.</p>}
+
+
+      <div className="mt-8 space-y-2">
+        <p className="text-muted-foreground">
+          Bitte laden Sie den Zahlungsbeleg (z. B. PDF der Überweisung) hoch, damit wir Ihre Zahlung schnell bearbeiten können.
+        </p>
+        <Label
+          htmlFor="zahlungsbelegFile"
+          className="mx-auto flex flex-col items-center justify-center w-full max-w-xs h-32 border-2 border-dashed border-primary/50 rounded-lg cursor-pointer bg-card hover:bg-muted/30 transition-colors"
+        >
+          <CloudUpload className="h-10 w-10 text-primary mb-2" />
+          <span className="text-sm text-primary font-medium">pdf/foto</span>
+          <span className="text-xs text-muted-foreground mt-1 truncate max-w-[90%] px-2">{fileNameBeleg}</span>
+        </Label>
+        <Input id="zahlungsbelegFile" name="zahlungsbelegFile" type="file" className="hidden" onChange={(e) => setFileNameBeleg(e.target.files?.[0]?.name || "Keine Datei ausgewählt")} accept="image/jpeg,image/png,image/webp,application/pdf" />
         {getErrorMessage("zahlungsbelegFile", formState.errors) && <p className="text-xs text-destructive mt-1">{getErrorMessage("zahlungsbelegFile", formState.errors)}</p>}
       </div>
+      <Input type="hidden" name="zahlungsbetrag" value={zuZahlenderBetrag} />
+      {/* zahlungsart und zahlungsdatum werden serverseitig gesetzt oder sind nicht mehr erforderlich */}
     </div>
   );
 };
@@ -486,20 +537,27 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
   const renderDocumentLink = (url?: string, altText?: string, hint?: string) => {
     if (!url) return display(null);
 
-    if (url.startsWith('https://firebasestorage.googleapis.com')) {
-        const isImage = /\.(jpeg|jpg|gif|png|webp)(\?|$)/i.test(url) || url.includes('image%2F') || url.includes('image%2f');
-        const isPdf = /\.pdf(\?|$)/i.test(url) || url.includes('application%2Fpdf') || url.includes('application%2fpdf');
-        let fileNameFromUrl = 'Datei';
+    let fileNameFromUrl = 'Datei';
+    let isFirebaseStorageUrl = url.includes('firebasestorage.googleapis.com');
+    let isMockFileUrl = url.startsWith('mock-file-url:');
+
+    if (isFirebaseStorageUrl) {
         try {
             const urlObj = new URL(url);
-            const pathSegments = urlObj.pathname.split('/');
-            const lastSegmentEncoded = pathSegments.pop();
+            const pathSegments = urlObj.pathname.split('%2F'); // Firebase uses %2F for /
+            const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; // Remove query params
             if (lastSegmentEncoded) {
-                 fileNameFromUrl = decodeURIComponent(lastSegmentEncoded.split('_').slice(1).join('_') || lastSegmentEncoded);
-                 if (fileNameFromUrl.length < 3) fileNameFromUrl = decodeURIComponent(lastSegmentEncoded); // fallback if no timestamp
+                 fileNameFromUrl = decodeURIComponent(lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) || lastSegmentEncoded);
             }
         } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
+    } else if (isMockFileUrl) {
+        fileNameFromUrl = decodeURIComponent(url.substring("mock-file-url:".length));
+    }
 
+
+    if (isFirebaseStorageUrl) {
+        const isImage = /\.(jpeg|jpg|gif|png|webp)(\?|$)/i.test(url) || url.includes('image%2F') || url.includes('image%2f');
+        const isPdf = /\.pdf(\?|$)/i.test(url) || url.includes('application%2Fpdf') || url.includes('application%2fpdf');
 
         if (isImage) {
             return (
@@ -516,20 +574,25 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
                   <FileText className="w-4 h-4 mr-1 flex-shrink-0" /> {fileNameFromUrl}
                 </Link>
               );
-        } else {
+        } else { // Other Firebase storage files
              return (
                 <Link href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center" title={`Datei ansehen: ${fileNameFromUrl}`}>
                     <FileText className="w-4 h-4 mr-1 flex-shrink-0" /> {fileNameFromUrl}
                 </Link>
             );
         }
+    } else if (isMockFileUrl) { // Fallback for mock file URLs
+         return (
+            <div className="flex items-center gap-1 mt-1 text-sm">
+                <FileIcon className="w-4 h-4 mr-1 flex-shrink-0 text-muted-foreground" /> {fileNameFromUrl} <span className="text-xs text-muted-foreground">(Mock)</span>
+            </div>
+        );
     }
-    return <span className="italic text-muted-foreground">Dokument nicht verfügbar oder ungültige URL</span>;
+    return <span className="italic text-muted-foreground">Dokument nicht verfügbar</span>;
   };
 
   return (
     <div className="space-y-6">
-      <input type="hidden" name="currentActionToken" value={formState.actionToken || ''} />
       <div>
         <h2 className="text-xl font-semibold">Übersicht und Bestätigung</h2>
         <p className="text-sm text-muted-foreground">Bitte überprüfen Sie Ihre Angaben sorgfältig, bevor Sie die Buchung abschließen.</p>
@@ -538,7 +601,7 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
         <CardHeader><CardTitle className="text-lg">Ihre Buchungsdetails (vom Hotel)</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div><strong>Zeitraum:</strong> {formatDateDisplay(initialBookingDetails?.checkInDate)} - {formatDateDisplay(initialBookingDetails?.checkOutDate)}</div>
-          <div><strong>Zimmer:</strong> {display(initialBookingDetails?.zimmertyp || (initialBookingDetails?.rooms && initialBookingDetails.rooms[0]?.zimmertyp))}</div>
+          <div><strong>Zimmer:</strong> {display(initialBookingDetails?.roomIdentifier)}</div>
           <div><strong>Verpflegung:</strong> {display(initialBookingDetails?.verpflegung)}</div>
           <div><strong>Gesamtpreis:</strong> {formatCurrency(initialBookingDetails?.price)}</div>
         </CardContent>
@@ -546,17 +609,14 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
       <Card>
         <CardHeader><CardTitle className="text-lg">Ihre Daten (Hauptgast)</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <div><strong>Anrede:</strong> {display(guestData?.anrede)}</div>
           <div><strong>Name:</strong> {display(guestData?.gastVorname)} {display(guestData?.gastNachname)}</div>
-          <div><strong>Geburtsdatum:</strong> {formatDateDisplay(guestData?.geburtsdatum) || display(null)}</div>
           <div><strong>Alter:</strong> {display(guestData?.alterHauptgast) || display(null)}</div>
           <div><strong>E-Mail:</strong> {display(guestData?.email)}</div>
           <div><strong>Telefon:</strong> {display(guestData?.telefon)}</div>
           <Separator className="my-3" />
           <h4 className="font-medium">Ausweisdokument Hauptgast</h4>
-          <div><strong>Dokumenttyp:</strong> {display(guestData?.hauptgastDokumenttyp)}</div>
-          <div><strong>Ausweis Vorderseite:</strong> {renderDocumentLink(guestData?.hauptgastAusweisVorderseiteUrl, "Ausweis Vorderseite", "identification document")}</div>
-          <div><strong>Ausweis Rückseite:</strong> {renderDocumentLink(guestData?.hauptgastAusweisRückseiteUrl, "Ausweis Rückseite", "identification document")}</div>
+          <div><strong>Vorderseite:</strong> {renderDocumentLink(guestData?.hauptgastAusweisVorderseiteUrl, "Ausweis Vorderseite", "identification document")}</div>
+          <div><strong>Rückseite:</strong> {renderDocumentLink(guestData?.hauptgastAusweisRückseiteUrl, "Ausweis Rückseite", "identification document")}</div>
         </CardContent>
       </Card>
 
@@ -582,24 +642,27 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
           <div><strong>Auswahl Zahlungssumme:</strong> {guestData?.paymentAmountSelection === 'downpayment' ? 'Anzahlung (30%)' : 'Gesamtbetrag (100%)'}</div>
           <div><strong>Zahlungsart:</strong> {display(guestData?.zahlungsart)}</div>
           <div><strong>Zu zahlender Betrag:</strong> {formatCurrency(guestData?.zahlungsbetrag)}</div>
-          <div><strong>Zahlungsdatum:</strong> {formatDateDisplay(guestData?.zahlungsdatum) || display(null)}</div>
           <div><strong>Zahlungsbeleg:</strong> {renderDocumentLink(guestData?.zahlungsbelegUrl, "Zahlungsbeleg", "payment proof")}</div>
-          <div className="font-medium">
-            <strong>Zahlungsstatus:</strong>{' '}
+           <div className="font-medium">
+             <strong>Zahlungsstatus:</strong>{' '}
             <Badge
-              variant={
-                (initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt)
-                  ? "default"
-                  : guestData?.zahlungsbelegUrl
-                    ? "secondary"
-                    : "outline"
-              }
-            >
-              {(initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt)
-                ? "Bezahlt & Bestätigt"
-                : guestData?.zahlungsbelegUrl
-                  ? "Zahlungsnachweis Erhalten"
-                  : "Zahlung Ausstehend"}
+                variant={
+                    (initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt)
+                    ? "default" // Grün für bezahlt und bestätigt
+                    : guestData?.zahlungsbelegUrl
+                        ? "secondary" // Gelb/Orange für Nachweis erhalten
+                        : "outline" // Grau für ausstehend
+                }
+                className={cn(
+                    (initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt) && "bg-green-500 hover:bg-green-600 text-white",
+                    (!(initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt) && guestData?.zahlungsbelegUrl) && "bg-yellow-500 hover:bg-yellow-600 text-black"
+                )}
+                >
+                {(initialBookingDetails?.status === "Confirmed" && guestData?.submittedAt)
+                    ? "Bezahlt & Bestätigt"
+                    : guestData?.zahlungsbelegUrl
+                    ? "Zahlungsnachweis Erhalten"
+                    : "Zahlung Ausstehend"}
             </Badge>
           </div>
         </CardContent>
@@ -624,10 +687,11 @@ const UebersichtBestaetigungStep: React.FC<StepContentProps> = ({ initialBooking
   );
 };
 
+
 interface Step {
   id: string;
-  name: string; // For internal logic and CardTitle
-  label: string; // For visual stepper UI
+  name: string; 
+  label: string; 
   Icon: React.ElementType;
   Content: React.FC<StepContentProps>;
   action: (bookingToken: string, prevState: FormState, formData: FormData) => Promise<FormState>;
@@ -636,16 +700,18 @@ interface Step {
 const BookingSummaryCard: React.FC<{ bookingDetails?: Booking | null }> = ({ bookingDetails }) => {
   if (!bookingDetails) return null;
   return (
-    <Card className="mb-8 bg-muted/30 shadow-sm">
+    <Card className="mb-8 bg-muted/20 shadow-sm">
       <CardHeader>
-        <CardTitle className="text-lg">Ihre Buchungsübersicht (vom Hotel)</CardTitle>
+        <CardTitle className="text-lg">Ihre Buchungsübersicht</CardTitle>
+        <CardDescription>Diese Daten wurden vom Hotel für Sie voreingestellt.</CardDescription>
       </CardHeader>
-      <CardContent className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+      <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
         <div><strong className="block text-xs text-muted-foreground">Gast (Hauptbucher)</strong> {bookingDetails.guestFirstName} {bookingDetails.guestLastName}</div>
         <div><strong className="block text-xs text-muted-foreground">Preis</strong> {formatCurrency(bookingDetails.price)}</div>
         <div><strong className="block text-xs text-muted-foreground">Anreise</strong> {formatDateDisplay(bookingDetails.checkInDate)}</div>
         <div><strong className="block text-xs text-muted-foreground">Abreise</strong> {formatDateDisplay(bookingDetails.checkOutDate)}</div>
-        <div className="col-span-2"><strong className="block text-xs text-muted-foreground">Zimmer</strong> {bookingDetails.roomIdentifier} ({bookingDetails.verpflegung || 'Keine Verpflegung'})</div>
+        <div className="col-span-1 sm:col-span-2"><strong className="block text-xs text-muted-foreground">Zimmer</strong> {bookingDetails.roomIdentifier}</div>
+        <div className="col-span-1 sm:col-span-2"><strong className="block text-xs text-muted-foreground">Verpflegung</strong> {bookingDetails.verpflegung || 'Keine Verpflegung'}</div>
       </CardContent>
     </Card>
   );
@@ -667,28 +733,27 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     setLatestGuestSubmittedData(initialBookingDetailsProp?.guestSubmittedData);
   }, [initialBookingDetailsProp]);
 
-
   const steps: Step[] = useMemo(() => [
     { id: "hauptgast", name: "Hauptgast & Ausweis", label: "Hauptgast", Icon: UserCircle, Content: HauptgastDetailsStep, action: submitGastStammdatenAction },
     { id: "mitreisende", name: "Mitreisende", label: "Mitreisende", Icon: Users2, Content: MitreisendeStep, action: submitMitreisendeAction },
     { id: "zahlungssumme", name: "Zahlungssumme", label: "Zahlungswahl", Icon: WalletCards, Content: ZahlungssummeWaehlenStep, action: submitPaymentAmountSelectionAction },
-    { id: "zahlung", name: "Zahlungsinformationen", label: "Zahlungsinfo", Icon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction },
+    { id: "zahlung", name: "Banküberweisung & Beleg", label: "Zahlungsinfo", Icon: CreditCard, Content: ZahlungsinformationenStep, action: submitZahlungsinformationenAction },
     { id: "uebersicht", name: "Bestätigung", label: "Bestätigung", Icon: CheckCircle, Content: UebersichtBestaetigungStep, action: submitEndgueltigeBestaetigungAction },
   ], []);
 
-  const stepperLabels = steps.map(s => s.label); // ["Hauptgast", "Mitreisende", ...]
+  const stepperLabels = steps.map(s => s.label);
   const totalDisplaySteps = stepperLabels.length;
 
 
   const initialStepFromDb = useMemo(() => {
     const lastStep = latestGuestSubmittedData?.lastCompletedStep;
-    if (typeof lastStep === 'number' && lastStep >= 0) { // lastCompletedStep is 0-indexed
-      if (lastStep >= steps.length - 1) { // If last completed step is the final data entry step
-        return steps.length; // Go to "Fertig" state
+    if (typeof lastStep === 'number' && lastStep >= 0) { 
+      if (lastStep >= steps.length - 1) { 
+        return steps.length; 
       }
-      return lastStep + 1; // Go to the next step
+      return lastStep + 1; 
     }
-    return 0; // Start at the first step
+    return 0; 
   }, [latestGuestSubmittedData?.lastCompletedStep, steps.length]);
 
   const [currentStep, setCurrentStep] = useState(initialStepFromDb);
@@ -702,11 +767,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     if (currentStep >= 0 && currentStep < steps.length && steps[currentStep]?.action) {
         return steps[currentStep].action.bind(null, bookingToken);
     }
-    // Fallback if currentStep is out of bounds (e.g., when all steps are completed)
     return async (prevState: FormState, formData: FormData) => ({
         ...initialFormState,
         message: currentStep >= steps.length ? "Alle Schritte abgeschlossen." : "Interner Fehler: Ungültiger Schritt.",
-        success: currentStep >= steps.length, // Success if all steps done
+        success: currentStep >= steps.length, 
     });
   }, [currentStep, steps, bookingToken]);
 
@@ -714,7 +778,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
 
   useEffect(() => {
     if (formState.actionToken && formState.actionToken !== lastProcessedActionTokenRef.current) {
-      lastProcessedActionTokenRef.current = formState.actionToken; // Mark this token as processed
+      lastProcessedActionTokenRef.current = formState.actionToken; 
 
       toast({
         title: formState.success ? "Erfolg" : "Hinweis",
@@ -729,12 +793,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
         if (currentStep < steps.length - 1) {
           setCurrentStep(prev => prev + 1);
         } else if (currentStep === steps.length -1) {
-          // This was the last data entry step, now show "Fertig"
           setCurrentStep(steps.length);
         }
       }
     } else if (formState.message && !formState.actionToken && !lastProcessedActionTokenRef.current) {
-      // Handle initial or non-action related messages (e.g., validation before submit)
        toast({
         title: "Hinweis",
         description: formState.message,
@@ -785,7 +847,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
     );
   }
 
-  // Fallback for invalid step index, though currentActionFn should handle this
+  
   if (currentStep < 0 || !steps[currentStep]) {
     return (
         <Card className="w-full max-w-lg mx-auto shadow-lg">
@@ -802,7 +864,7 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
   return (
     <>
       <div className="max-w-3xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-4">
+         <div className="text-center mb-4">
              <PradellLogo className="mb-8 inline-block" />
             <h1 className="text-2xl font-semibold tracking-tight">Buchung vervollständigen</h1>
             <p className="text-muted-foreground">Schritt {stepNumberForDisplay} von {totalDisplaySteps} - {steps[currentStep].label}</p>
@@ -813,13 +875,13 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
             {steps.map((step, index) => {
                 const StepIconComponent = step.Icon;
                 const isActive = index === currentStep;
-                const isCompleted = index < currentStep || (currentStep === steps.length && index < steps.length); // All completed if on final "Fertig" screen
+                const isCompleted = index < currentStep || (currentStep === steps.length && index < steps.length);
                 return(
                 <li
                     key={step.id}
                     className={cn(
                     "flex w-full items-center",
-                    index < steps.length - 1 ? "after:content-[''] after:w-full after:h-1 after:border-b after:border-4 after:inline-block" : "",
+                    index < steps.length - 1 ? "after:content-[''] after:w-full after:h-1 after:border-b after:border-muted after:border-4 after:inline-block" : "",
                     index < steps.length - 1 && (isCompleted || isActive) ? "after:border-primary" : "after:border-muted"
                     )}
                 >
@@ -839,7 +901,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
             </ol>
             <div className="flex justify-between text-xs mt-2">
                 {steps.map(step => (
-                    <span key={`${step.id}-label`} className="text-center flex-1 text-muted-foreground group-data-[isActive=true]:text-primary">
+                    <span key={`${step.id}-label`} className={cn(
+                        "text-center flex-1 text-muted-foreground",
+                        currentStep === steps.findIndex(s => s.id === step.id) && "text-primary font-medium"
+                        )}>
                         {step.label}
                     </span>
                 ))}
@@ -855,10 +920,10 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
               </CardTitle>
           </CardHeader>
           <CardContent className="pt-6">
-            <form action={formAction} key={`${currentStep}-${bookingToken}`} encType="multipart/form-data" >
+            <form action={formAction} key={`${currentStep}-${bookingToken}`} >
               <ActiveStepContent
                 bookingToken={bookingToken}
-                initialBookingDetails={initialBookingDetails}
+                initialBookingDetails={initialBookingDetails!}
                 guestData={latestGuestSubmittedData}
                 formState={formState}
                 setLatestGuestSubmittedData={setLatestGuestSubmittedData}
@@ -874,8 +939,8 @@ export function GuestBookingFormStepper({ bookingToken, bookingDetails: initialB
                     <ChevronLeft className="mr-2 h-4 w-4" /> Zurück
                 </Button>
                 <Button type="submit" disabled={isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                  {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (currentStep === steps.length -1 ? "Buchung abschließen" : "Weiter")}
-                  {!isPending && <ChevronRight className="ml-2 h-5 w-5" />}
+                  {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (currentStep === steps.length -1 ? (<><CheckCircle className="mr-2 h-4 w-4"/>Buchung abschließen</>) : "Weiter")}
+                  {!isPending && currentStep < steps.length -1 && <ChevronRight className="ml-2 h-5 w-5" />}
                 </Button>
               </CardFooter>
             </form>
