@@ -90,7 +90,11 @@ export default async function AdminDashboardPage() {
     console.log("[AdminDashboardPage] Successfully fetched bookings and calculated stats.");
   } catch (error: any) {
     console.error("[AdminDashboardPage] Critical error fetching data for dashboard:", error.message, error.stack?.substring(0,500));
-    fetchError = "Fehler beim Laden der Buchungsdaten. Bitte überprüfen Sie die Server-Konfiguration und -Logs. Stellen Sie sicher, dass Firebase korrekt initialisiert ist und die Firestore API aktiviert ist.";
+    if (error.message.includes("Firestore is not initialized")) {
+        fetchError = "Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID) und dass die Firestore-Dienste in der Firebase-Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde. Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.";
+    } else {
+        fetchError = `Fehler beim Laden der Buchungsdaten: ${error.message}. Bitte überprüfen Sie die Server-Konfiguration und -Logs.`;
+    }
     // To ensure the page still renders, we keep bookings as [] and stats as default.
   }
 
@@ -162,7 +166,7 @@ export default async function AdminDashboardPage() {
                  <div className="flex flex-col items-center justify-center py-12 text-center">
                     <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                     <h3 className="text-xl font-semibold text-destructive">Daten konnten nicht geladen werden</h3>
-                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben.</p>
+                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben und die Server-Logs für Details zur Firebase-Initialisierung.</p>
                 </div>
             ) : bookings.length > 0 ? (
                 <BookingsDataTable data={bookings} />
