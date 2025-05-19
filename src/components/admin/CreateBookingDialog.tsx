@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, useActionState } from "react";
+import { useState, useEffect } from "react";
+import { useFormState } from "react-dom"; // Korrigiert, um useFormState zu verwenden
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { de } from 'date-fns/locale';
-import type { FormState } from "@/lib/actions"; // Import FormState type
+import type { FormState } from "@/lib/actions"; 
 import { Separator } from "@/components/ui/separator";
 
 
@@ -42,7 +43,7 @@ const initialState: FormState = {
 };
 
 interface RoomFormData extends Omit<RoomDetail, 'erwachsene' | 'kinder' | 'kleinkinder'> {
-  id: string; // For unique key in map
+  id: string; 
   erwachsene: string;
   kinder?: string;
   kleinkinder?: string;
@@ -60,9 +61,9 @@ function SubmitButton() {
 
 export function CreateBookingDialog() {
   const [open, setOpen] = useState(false);
-  const [state, formAction] = useActionState(createBookingAction, initialState);
+  const [state, formAction] = useFormState(createBookingAction, initialState);
   const { toast } = useToast();
-  const [formKey, setFormKey] = useState(Date.now()); // To reset form on close/success
+  const [formKey, setFormKey] = useState(Date.now()); 
 
   const initialRoom: RoomFormData = {
     id: Date.now().toString(),
@@ -76,57 +77,64 @@ export function CreateBookingDialog() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const resetFormFields = () => {
-    setRooms([initialRoom]);
+    setRooms([{...initialRoom, id: Date.now().toString()}]); // Ensure new ID for reset room
     setDateRange(undefined);
-    setFormKey(Date.now()); // Change key to force form re-render and reset internal state
+    setFormKey(Date.now()); 
   };
 
   useEffect(() => {
-    if (!open) { // Reset when dialog closes
+    if (!open) { 
         resetFormFields();
-        // Reset action state by re-initializing formKey if necessary, or ensure it resets when formAction changes for useActionState
+        // Explicitly reset the action state if the dialog is closed after a submission
+        // This is tricky with useActionState as it doesn't have a built-in reset.
+        // The key change on the form is the primary reset mechanism.
+        // If state.actionToken is still set, and you want to clear it, you'd need a more complex pattern.
     }
   }, [open]);
 
   useEffect(() => {
-    if (state.success && state.bookingToken) {
-      toast({
-        title: "Buchung erfolgreich erstellt!",
-        description: (
-          <div>
-            <p>{state.message?.replace(` Token: ${state.bookingToken}`, '')}</p>
-            <p>
-              Link für Gast: <br/>
-              <Link href={`/buchung/${state.bookingToken}`} target="_blank" className="underline text-primary hover:text-primary/80">
-                {typeof window !== "undefined" ? `${window.location.origin}/buchung/${state.bookingToken}` : `/buchung/${state.bookingToken}`}
-              </Link>
-            </p>
-          </div>
-        ),
-        duration: 10000,
-      });
-      setOpen(false);
-      resetFormFields();
-    } else if (state.message && state.errors && Object.keys(state.errors).length > 0) {
-      let errorMessage = state.message || "Bitte überprüfen Sie die Eingabefelder.";
-      const fieldErrors = Object.values(state.errors).flat().join(" ");
-      if (fieldErrors) {
-        errorMessage += ` Fehler: ${fieldErrors}`;
+    if (state.actionToken) { // Process only if there's an action token (i.e., form was submitted)
+      if (state.success && state.bookingToken) {
+        toast({
+          title: "Buchung erfolgreich erstellt!",
+          description: (
+            <div>
+              <p>{state.message?.replace(` Token: ${state.bookingToken}`, '')}</p>
+              <p>
+                Link für Gast: <br/>
+                <Link href={`/buchung/${state.bookingToken}`} target="_blank" className="underline text-primary hover:text-primary/80">
+                  {typeof window !== "undefined" ? `${window.location.origin}/buchung/${state.bookingToken}` : `/buchung/${state.bookingToken}`}
+                </Link>
+              </p>
+            </div>
+          ),
+          duration: 10000,
+        });
+        setOpen(false);
+        resetFormFields(); // Reset form fields after successful submission
+      } else if (state.message && state.errors && Object.keys(state.errors).length > 0) {
+        let errorMessage = state.message || "Bitte überprüfen Sie die Eingabefelder.";
+        const fieldErrorsString = Object.entries(state.errors)
+            .map(([key, value]) => value ? `${Array.isArray(value) ? value.join(', ') : String(value)}` : '')
+            .filter(Boolean)
+            .join('. ');
+        if (fieldErrorsString) {
+          errorMessage += ` Fehler: ${fieldErrorsString}`;
+        }
+        toast({
+          variant: "destructive",
+          title: "Fehler beim Erstellen der Buchung",
+          description: errorMessage,
+        });
+      } else if (state.message && !state.success && Object.keys(state.errors || {}).length === 0 && !state.bookingToken) {
+         toast({
+          variant: "destructive",
+          title: "Fehler",
+          description: state.message,
+        });
       }
-      toast({
-        variant: "destructive",
-        title: "Fehler beim Erstellen der Buchung",
-        description: errorMessage,
-      });
-    } else if (state.message && !state.success && Object.keys(state.errors || {}).length === 0 && !state.bookingToken) {
-       // Generic error from server action not related to validation
-       toast({
-        variant: "destructive",
-        title: "Fehler",
-        description: state.message,
-      });
     }
-  }, [state, toast]);
+  }, [state, toast]); // Only react to changes in `state`
 
   const handleAddRoom = () => {
     setRooms([...rooms, { ...initialRoom, id: Date.now().toString() }]);
@@ -150,19 +158,19 @@ export function CreateBookingDialog() {
           <PlusCircle className="mr-2 h-4 w-4" /> Buchung erstellen
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl md:max-w-3xl">
+      <DialogContent className="sm:max-w-3xl"> {/* Increased width */}
         <DialogHeader>
           <DialogTitle>Neue Buchung erstellen</DialogTitle>
         </DialogHeader>
         <form action={formAction} key={formKey}>
           <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({
             ...rest,
+            // Ensure numbers are parsed correctly, provide defaults if parse fails
             erwachsene: parseInt(rest.erwachsene, 10) || 0,
             kinder: parseInt(rest.kinder || "0", 10) || 0,
             kleinkinder: parseInt(rest.kleinkinder || "0", 10) || 0,
           })))} />
           <div className="grid gap-6 py-4 max-h-[70vh] overflow-y-auto pr-2">
-            {/* Row 1: Vorname, Nachname, Zeitraum */}
             <div className="grid md:grid-cols-3 gap-4 items-start">
               <div>
                 <Label htmlFor="guestFirstName" className="flex items-center mb-1">
@@ -214,6 +222,7 @@ export function CreateBookingDialog() {
                       onSelect={setDateRange}
                       numberOfMonths={1}
                       locale={de}
+                      disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
                     />
                   </PopoverContent>
                 </Popover>
@@ -224,7 +233,6 @@ export function CreateBookingDialog() {
               </div>
             </div>
 
-            {/* Row 2: Verpflegung, Gesamtpreis */}
             <div className="grid md:grid-cols-2 gap-4 items-start">
               <div>
                 <Label htmlFor="verpflegung" className="flex items-center mb-1">
@@ -253,10 +261,18 @@ export function CreateBookingDialog() {
               </div>
             </div>
 
-            {state.errors?.roomsData && <p className="text-sm text-destructive mt-2 mb-2 px-1">{Array.isArray(state.errors.roomsData) ? state.errors.roomsData.join(', ') : String(state.errors.roomsData)}</p>}
+            {state.errors?.roomsData && (
+                <div className="col-span-full p-2 bg-destructive/10 border border-destructive rounded-md">
+                    <p className="text-sm text-destructive font-medium">Fehler bei Zimmerdetails:</p>
+                    <ul className="list-disc list-inside text-xs text-destructive">
+                        {(Array.isArray(state.errors.roomsData) ? state.errors.roomsData : [state.errors.roomsData]).map((err, i) => (
+                            <li key={i}>{String(err)}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
 
-            {/* Zimmerdetails Section */}
             {rooms.map((room, index) => (
               <div key={room.id} className="space-y-4 pt-4 border-t first:border-t-0">
                 <div className="flex justify-between items-center">
@@ -311,7 +327,6 @@ export function CreateBookingDialog() {
             </Button>
 
 
-            {/* Interne Bemerkungen Section */}
             <div className="space-y-2 pt-4 border-t">
                <Label htmlFor="interneBemerkungen" className="flex items-center">
                  <MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" /> Interne Bemerkungen (Optional)
@@ -332,3 +347,5 @@ export function CreateBookingDialog() {
     </Dialog>
   );
 }
+
+    
