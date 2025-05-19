@@ -2,25 +2,22 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useFormState } from "react-dom"; // Korrigiert, um useFormState zu verwenden
+import { useActionState } from "react"; // Geändert von react-dom zu react und useFormState zu useActionState
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogClose,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"; // DialogDescription und DialogFooter entfernt, da sie im aktuellen Code nicht direkt verwendet wurden
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createBookingAction } from "@/lib/actions";
 import type { RoomDetail } from "@/lib/definitions";
-import { CalendarIcon as CalendarLucideIcon, Loader2, PlusCircle, User, Bed, Euro, Home, MessageSquare, Users, SmilePlus, Plus, Trash2 } from "lucide-react";
+import { CalendarIcon as CalendarLucideIcon, Loader2, PlusCircle, User, Bed, Euro, Home, MessageSquare, Users, Plus, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -31,7 +28,6 @@ import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { de } from 'date-fns/locale';
 import type { FormState } from "@/lib/actions"; 
-import { Separator } from "@/components/ui/separator";
 
 
 const initialState: FormState = {
@@ -61,7 +57,7 @@ function SubmitButton() {
 
 export function CreateBookingDialog() {
   const [open, setOpen] = useState(false);
-  const [state, formAction] = useFormState(createBookingAction, initialState);
+  const [state, formAction] = useActionState(createBookingAction, initialState);
   const { toast } = useToast();
   const [formKey, setFormKey] = useState(Date.now()); 
 
@@ -77,7 +73,7 @@ export function CreateBookingDialog() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   const resetFormFields = () => {
-    setRooms([{...initialRoom, id: Date.now().toString()}]); // Ensure new ID for reset room
+    setRooms([{...initialRoom, id: Date.now().toString()}]);
     setDateRange(undefined);
     setFormKey(Date.now()); 
   };
@@ -85,15 +81,11 @@ export function CreateBookingDialog() {
   useEffect(() => {
     if (!open) { 
         resetFormFields();
-        // Explicitly reset the action state if the dialog is closed after a submission
-        // This is tricky with useActionState as it doesn't have a built-in reset.
-        // The key change on the form is the primary reset mechanism.
-        // If state.actionToken is still set, and you want to clear it, you'd need a more complex pattern.
     }
   }, [open]);
 
   useEffect(() => {
-    if (state.actionToken) { // Process only if there's an action token (i.e., form was submitted)
+    if (state.actionToken) { 
       if (state.success && state.bookingToken) {
         toast({
           title: "Buchung erfolgreich erstellt!",
@@ -111,7 +103,7 @@ export function CreateBookingDialog() {
           duration: 10000,
         });
         setOpen(false);
-        resetFormFields(); // Reset form fields after successful submission
+        resetFormFields(); 
       } else if (state.message && state.errors && Object.keys(state.errors).length > 0) {
         let errorMessage = state.message || "Bitte überprüfen Sie die Eingabefelder.";
         const fieldErrorsString = Object.entries(state.errors)
@@ -134,7 +126,7 @@ export function CreateBookingDialog() {
         });
       }
     }
-  }, [state, toast]); // Only react to changes in `state`
+  }, [state, toast]); 
 
   const handleAddRoom = () => {
     setRooms([...rooms, { ...initialRoom, id: Date.now().toString() }]);
@@ -158,14 +150,13 @@ export function CreateBookingDialog() {
           <PlusCircle className="mr-2 h-4 w-4" /> Buchung erstellen
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-3xl"> {/* Increased width */}
+      <DialogContent className="sm:max-w-2xl md:max-w-3xl"> {/* Increased width */}
         <DialogHeader>
           <DialogTitle>Neue Buchung erstellen</DialogTitle>
         </DialogHeader>
         <form action={formAction} key={formKey}>
-          <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({
+          <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({ // id wird hier korrekt für das Backend entfernt
             ...rest,
-            // Ensure numbers are parsed correctly, provide defaults if parse fails
             erwachsene: parseInt(rest.erwachsene, 10) || 0,
             kinder: parseInt(rest.kinder || "0", 10) || 0,
             kleinkinder: parseInt(rest.kleinkinder || "0", 10) || 0,
@@ -222,7 +213,7 @@ export function CreateBookingDialog() {
                       onSelect={setDateRange}
                       numberOfMonths={1}
                       locale={de}
-                      disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))} // Disable past dates
+                      disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
                     />
                   </PopoverContent>
                 </Popover>
@@ -265,7 +256,7 @@ export function CreateBookingDialog() {
                 <div className="col-span-full p-2 bg-destructive/10 border border-destructive rounded-md">
                     <p className="text-sm text-destructive font-medium">Fehler bei Zimmerdetails:</p>
                     <ul className="list-disc list-inside text-xs text-destructive">
-                        {(Array.isArray(state.errors.roomsData) ? state.errors.roomsData : [state.errors.roomsData]).map((err, i) => (
+                        {(Array.isArray(state.errors.roomsData) ? state.errors.roomsData : [String(state.errors.roomsData)]).map((err, i) => (
                             <li key={i}>{String(err)}</li>
                         ))}
                     </ul>
@@ -336,16 +327,14 @@ export function CreateBookingDialog() {
             </div>
           </div>
 
-          <DialogFooter className="mt-6 pt-4 border-t">
+          <div className="mt-6 pt-4 border-t flex justify-end space-x-2"> {/* DialogFooter ersetzt durch div für Konsistenz */}
             <DialogClose asChild>
               <Button variant="outline" type="button">Abbrechen</Button>
             </DialogClose>
             <SubmitButton />
-          </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
   );
 }
-
-    
