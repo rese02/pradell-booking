@@ -6,25 +6,29 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import Image from "next/image";
+import NextImage from "next/image"; // Renamed to avoid conflict
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { findBookingByIdFromFirestore } from "@/lib/mock-db"; 
+import { findBookingByIdFromFirestore } from "@/lib/mock-db";
 import { notFound } from "next/navigation";
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
   console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details from Firestore for id: "${id}"`);
-  const booking = await findBookingByIdFromFirestore(id);
-  if (!booking) {
-    console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found in Firestore.`);
-  } else {
-    const guestDataSummary = booking.guestSubmittedData
+  try {
+    const booking = await findBookingByIdFromFirestore(id);
+    if (!booking) {
+      console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found in Firestore.`);
+    } else {
+      const guestDataSummary = booking.guestSubmittedData
         ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email }
         : { submitted: false };
-    console.log(`[Page admin/bookings/[id]] Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
-    console.log(`[Page admin/bookings/[id]] Full booking data:`, JSON.stringify(booking, null, 2).substring(0, 500) + "...");
+      console.log(`[Page admin/bookings/[id]] Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
+    }
+    return booking;
+  } catch (error) {
+    console.error(`[Page admin/bookings/[id]] Error fetching booking ${id}:`, error);
+    return null; // Or rethrow, depending on desired error handling
   }
-  return booking;
 }
 
 const formatDate = (dateString?: Date | string, includeTime = false) => {
@@ -39,8 +43,8 @@ const formatDate = (dateString?: Date | string, includeTime = false) => {
 };
 
 const formatCurrency = (amount?: number) => {
-    if (typeof amount !== 'number') return "N/A";
-    return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(amount);
+  if (typeof amount !== 'number') return "N/A";
+  return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(amount);
 };
 
 interface DetailItemProps {
@@ -68,40 +72,45 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
       </div>
     )
   }
-  
+
   if (value === null || typeof value === 'undefined' || value === "") {
-     if (typeof value === 'boolean' && value === false) {
-        // Allow 'false' boolean to be displayed as "Nein"
-     } else {
-        return null;
-     }
+    if (typeof value === 'boolean' && value === false) {
+      // Allow 'false' boolean to be displayed as "Nein"
+    } else {
+      return null;
+    }
   }
-  
+
   let displayValue: React.ReactNode = value;
   if (typeof value === 'boolean') {
     displayValue = value ? "Ja" : "Nein";
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
-    if (value.startsWith('https://firebasestorage.googleapis.com')) {
-        const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(value) || value.includes('image%2F') || value.includes('image%2f'); // Basic check, case-insensitive
-        const isPdf = /\.pdf/i.test(value) || value.includes('application%2Fpdf') || value.includes('application%2fpdf'); // Basic check, case-insensitive
-        
-        let fileNameFromUrl = 'Datei';
+    let fileNameFromUrl = 'Datei';
+    let isFirebaseStorageUrl = value.startsWith('https://firebasestorage.googleapis.com');
+
+    if (isFirebaseStorageUrl) {
         try {
-            const urlObj = new URL(value);
-            const pathParts = urlObj.pathname.split('%2F'); // Firebase uses %2F for /
-            const lastPartEncoded = pathParts.pop();
-            if (lastPartEncoded) {
-                 fileNameFromUrl = decodeURIComponent(lastPartEncoded);
+            const decodedUrl = decodeURIComponent(value);
+            const pathSegments = new URL(decodedUrl).pathname.split('/');
+            const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; // Remove query params like token
+            if (lastSegmentEncoded) {
+                 // Remove timestamp prefix like "1678886400000_"
+                 fileNameFromUrl = lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) || lastSegmentEncoded;
             }
         } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
+    }
 
+
+    if (isFirebaseStorageUrl) {
+        const isImage = /\.(jpeg|jpg|gif|png|webp)(\?|$)/i.test(value) || value.includes('image%2F') || value.includes('image%2f');
+        const isPdf = /\.pdf(\?|$)/i.test(value) || value.includes('application%2Fpdf') || value.includes('application%2fpdf');
 
         if (isImage) {
             displayValue = (
                 <div className="flex flex-col gap-2 mt-1">
-                    <Image src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
+                    <NextImage src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
                     <Button asChild variant="outline" size="sm" className="w-fit">
                         <Link href={value} target="_blank" rel="noopener noreferrer">
                             <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen ({fileNameFromUrl})
@@ -112,36 +121,22 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
         } else if (isPdf) {
              displayValue = (
                 <div className="flex items-center gap-2 mt-1">
-                    <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm font-medium truncate max-w-xs">{fileNameFromUrl}</span>
-                     <Button asChild variant="outline" size="sm">
-                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${fileNameFromUrl}`}> 
-                            <FileText className="mr-2 h-4 w-4" /> PDF ansehen
-                        </Link>
-                    </Button>
+                    <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                    <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
+                        {fileNameFromUrl}
+                    </Link>
                 </div>
             );
-        } else { 
+        } else {
              displayValue = (
                 <div className="flex items-center gap-2 mt-1">
                     <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                    <span className="text-sm font-medium truncate max-w-xs">{fileNameFromUrl}</span>
-                    <Button asChild variant="outline" size="sm">
-                        <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileNameFromUrl}`}> 
-                           <Link2 className="mr-2 h-4 w-4" /> Datei ansehen
-                        </Link>
-                    </Button>
+                     <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
+                        {fileNameFromUrl}
+                    </Link>
                 </div>
             );
         }
-    } else if (value.startsWith("mock-file-url:")) { 
-        const fileName = decodeURIComponent(value.substring("mock-file-url:".length));
-        displayValue = (
-            <div className="flex items-center gap-2 mt-1">
-                <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                <span className="text-sm font-medium">{fileName} (Mock-Datei)</span>
-            </div>
-        );
     } else if (isLink) { // Fallback for other links if not a storage URL
         displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
     } else {
@@ -198,7 +193,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     console.error(`[Server BookingDetailsPage] Booking not found for id "${params.id}" (getBookingDetails returned null). Calling notFound().`);
     notFound();
   }
-  
+
   console.log(`[Server BookingDetailsPage] Booking data for id "${params.id}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
 
   const guestData = booking.guestSubmittedData;
@@ -208,7 +203,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     <div className="container mx-auto py-2">
       <div className="mb-6">
         <Button variant="outline" asChild className="mb-4">
-            <Link href="/admin/dashboard"><ArrowLeft className="mr-2 h-4 w-4" /> Zurück zur Übersicht</Link>
+          <Link href="/admin/dashboard"><ArrowLeft className="mr-2 h-4 w-4" /> Zurück zur Übersicht</Link>
         </Button>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -223,20 +218,19 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
         <div className="lg:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Hauptinformationen</CardTitle>
+              <CardTitle>Hauptinformationen (vom Hotel)</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <DetailItem icon={User} label="Gast (Initial)" value={`${booking.guestFirstName} ${booking.guestLastName}`} />
               <DetailItem icon={Euro} label="Preis" value={booking.price} isCurrency />
-              {/* roomIdentifier for general display, detailed rooms will be in its own card if 'rooms' array exists */}
-              <DetailItem icon={Home} label="Zimmerübersicht" value={booking.roomIdentifier} />
+              <DetailItem icon={Home} label="Zimmerübersicht (Initial)" value={booking.roomIdentifier} />
               <DetailItem icon={CalendarDays} label="Anreise" value={formatDate(booking.checkInDate)} />
               <DetailItem icon={CalendarDays} label="Abreise" value={formatDate(booking.checkOutDate)} />
               <DetailItem icon={User} label="Status" value={booking.status} isBadge
                 badgeVariant={
                   booking.status === "Confirmed" ? "default" :
-                  booking.status === "Pending Guest Information" ? "secondary" :
-                  booking.status === "Cancelled" ? "destructive" : "outline"
+                    booking.status === "Pending Guest Information" ? "secondary" :
+                      booking.status === "Cancelled" ? "destructive" : "outline"
                 }
               />
               <DetailItem icon={Home} label="Verpflegung" value={booking.verpflegung} />
@@ -264,56 +258,72 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
             </Card>
           )}
 
-          {guestData && (guestData.gastVorname || guestData.email || guestData.hauptgastAusweisVorderseiteUrl || guestData.zahlungsbelegUrl ) && (
+          {guestData && (guestData.gastVorname || guestData.email || guestData.hauptgastAusweisVorderseiteUrl || guestData.zahlungsbelegUrl || guestData.submittedAt) && (
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>
                 {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)} (Letzter Schritt: {guestData.lastCompletedStep})</CardDescription>}
+                {!guestData.submittedAt && booking.status === "Pending Guest Information" && <CardDescription>Gast hat das Formular noch nicht abgeschlossen.</CardDescription>}
               </CardHeader>
               <CardContent className="space-y-4">
+                
                 <h3 className="font-semibold text-lg flex items-center"><UserCircle className="mr-2 h-5 w-5 text-muted-foreground" /> Stammdaten Hauptgast</h3>
                 <div className="grid gap-4 sm:grid-cols-2">
-                    <DetailItem icon={User} label="Anrede" value={guestData.anrede} />
-                    <DetailItem icon={User} label="Vollständiger Name" value={`${guestData.gastVorname || ''} ${guestData.gastNachname || ''}`} />
-                    <DetailItem icon={CalendarDays} label="Geburtsdatum" value={formatDate(guestData.geburtsdatum)} />
-                    <DetailItem icon={Mail} label="E-Mail" value={guestData.email} isLink />
-                    <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
+                  <DetailItem icon={User} label="Anrede" value={guestData.anrede} />
+                  <DetailItem icon={User} label="Vollständiger Name" value={`${guestData.gastVorname || ''} ${guestData.gastNachname || ''}`} />
+                  <DetailItem icon={CalendarDays} label="Geburtsdatum" value={formatDate(guestData.geburtsdatum)} />
+                  <DetailItem icon={User} label="Alter" value={guestData.alterHauptgast ? `${guestData.alterHauptgast} Jahre` : undefined} />
+                  <DetailItem icon={Mail} label="E-Mail" value={guestData.email} isLink />
+                  <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
                 </div>
-                
-                {(guestData.hauptgastDokumenttyp || guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
+
+                {(guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
                   <>
                     <Separator className="my-4" />
                     <h3 className="font-semibold text-lg flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
-                        <DetailItem icon={Briefcase} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
-                        <DetailItem icon={FileText} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification document front"/>
-                        <DetailItem icon={FileText} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification document back"/>
+                      <DetailItem icon={FileText} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification document front" />
+                      <DetailItem icon={FileText} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification document back" />
                     </div>
                   </>
                 )}
 
-                {(guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
+                {guestData.mitreisende && guestData.mitreisende.length > 0 && (
                     <>
                         <Separator className="my-4" />
-                        <h3 className="font-semibold text-lg flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
-                            <DetailItem icon={Euro} label="Anzahlung (30%)" value={guestData.zahlungsbetrag} isCurrency/>
-                            <DetailItem icon={CalendarDays} label="Zahlungsdatum" value={formatDate(guestData.zahlungsdatum)} />
-                            <DetailItem icon={FileText} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof"/>
-                        </div>
+                        <h3 className="font-semibold text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-muted-foreground" /> Mitreisende</h3>
+                        {guestData.mitreisende.map((mitreisender, index) => (
+                            <div key={mitreisender.id || index} className="p-3 border rounded-md bg-muted/20 mt-2">
+                                <h4 className="font-medium text-md mb-1">Mitreisender {index + 1}: {mitreisender.vorname} {mitreisender.nachname}</h4>
+                                <DetailItem icon={FileText} label="Ausweis Vorderseite" value={mitreisender.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="companion identification front"/>
+                                <DetailItem icon={FileText} label="Ausweis Rückseite" value={mitreisender.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="companion identification back"/>
+                            </div>
+                        ))}
                     </>
                 )}
                 
+                {(guestData.paymentAmountSelection || guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
+                  <>
+                    <Separator className="my-4" />
+                    <h3 className="font-semibold text-lg flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <DetailItem icon={Landmark} label="Auswahl Zahlungssumme" value={guestData.paymentAmountSelection === 'downpayment' ? 'Anzahlung (30%)' : (guestData.paymentAmountSelection === 'full_amount' ? 'Gesamtbetrag (100%)' : guestData.paymentAmountSelection)} />
+                      <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
+                      <DetailItem icon={Euro} label="Überwiesener Betrag" value={guestData.zahlungsbetrag} isCurrency />
+                      <DetailItem icon={FileText} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof" />
+                    </div>
+                  </>
+                )}
+
                 {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
-                    <>
-                        <Separator className="my-4" />
-                        <h3 className="font-semibold text-lg flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                           <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert} />
-                           <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert} />
-                        </div>
-                    </>
+                  <>
+                    <Separator className="my-4" />
+                    <h3 className="font-semibold text-lg flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert} />
+                      <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert} />
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -321,15 +331,16 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
         </div>
 
         <Card className="lg:col-span-1 h-fit sticky top-20">
-            <CardHeader>
-                <CardTitle>Notizen & Verlauf</CardTitle>
-                <CardDescription>Interne Notizen und Buchungsverlauf.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <p className="text-sm text-muted-foreground">Feature in Kürze verfügbar.</p>
-            </CardContent>
+          <CardHeader>
+            <CardTitle>Notizen &amp; Verlauf</CardTitle>
+            <CardDescription>Interne Notizen und Buchungsverlauf.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">Feature in Kürze verfügbar.</p>
+          </CardContent>
         </Card>
       </div>
     </div>
   );
 }
+
