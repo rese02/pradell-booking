@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import NextImage from "next/image"; // Renamed to avoid conflict
+import NextImage from "next/image"; 
 import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { findBookingByIdFromFirestore } from "@/lib/mock-db";
@@ -27,7 +27,7 @@ async function getBookingDetails(id: string): Promise<Booking | null> {
     return booking;
   } catch (error) {
     console.error(`[Page admin/bookings/[id]] Error fetching booking ${id}:`, error);
-    return null; // Or rethrow, depending on desired error handling
+    return null;
   }
 }
 
@@ -63,7 +63,7 @@ interface DetailItemProps {
 const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCurrency, isLink, isBadge, badgeVariant, children, isDocumentUrl, documentHint }) => {
   if (children) {
     return (
-      <div className="flex items-start space-x-3">
+      <div className="flex items-start space-x-3 py-1">
         <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
         <div>
           <p className="text-sm text-muted-foreground">{label}</p>
@@ -94,9 +94,8 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
         try {
             const decodedUrl = decodeURIComponent(value);
             const pathSegments = new URL(decodedUrl).pathname.split('/');
-            const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; // Remove query params like token
+            const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; 
             if (lastSegmentEncoded) {
-                 // Remove timestamp prefix like "1678886400000_"
                  fileNameFromUrl = lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) || lastSegmentEncoded;
             }
         } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
@@ -137,7 +136,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
                 </div>
             );
         }
-    } else if (isLink) { // Fallback for other links if not a storage URL
+    } else if (isLink) { 
         displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
     } else {
       displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht für Vorschau geeignet oder ungültige URL)</span>;
@@ -149,7 +148,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
   }
 
   return (
-    <div className="flex items-start space-x-3">
+    <div className="flex items-start space-x-3 py-1">
       <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />
       <div>
         <p className="text-sm text-muted-foreground">{label}</p>
@@ -170,7 +169,7 @@ const RoomDetailsCard: React.FC<{ rooms: RoomDetail[] }> = ({ rooms }) => {
       </CardHeader>
       <CardContent className="space-y-4">
         {rooms.map((room, index) => (
-          <div key={index} className="p-3 border rounded-md bg-muted/30">
+          <div key={index} className="p-3 border rounded-md bg-muted/20 shadow-sm">
             <h4 className="font-semibold text-md mb-2">Zimmer {index + 1}: {room.zimmertyp}</h4>
             <div className="grid sm:grid-cols-2 gap-2 text-sm">
               <p><strong>Erwachsene:</strong> {room.erwachsene}</p>
@@ -200,7 +199,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
   const guestPortalLink = `/buchung/${booking.bookingToken}`;
 
   return (
-    <div className="container mx-auto py-2">
+    <div className="container mx-auto py-4">
       <div className="mb-6">
         <Button variant="outline" asChild className="mb-4">
           <Link href="/admin/dashboard"><ArrowLeft className="mr-2 h-4 w-4" /> Zurück zur Übersicht</Link>
@@ -220,7 +219,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
             <CardHeader>
               <CardTitle>Hauptinformationen (vom Hotel)</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
+            <CardContent className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
               <DetailItem icon={User} label="Gast (Initial)" value={`${booking.guestFirstName} ${booking.guestLastName}`} />
               <DetailItem icon={Euro} label="Preis" value={booking.price} isCurrency />
               <DetailItem icon={Home} label="Zimmerübersicht (Initial)" value={booking.roomIdentifier} />
@@ -233,12 +232,12 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                       booking.status === "Cancelled" ? "destructive" : "outline"
                 }
               />
-              <DetailItem icon={Home} label="Verpflegung" value={booking.verpflegung} />
+              <DetailItem icon={Briefcase} label="Verpflegung" value={booking.verpflegung} />
               <DetailItem icon={Link2} label="Gast-Link" value={guestPortalLink} isLink />
             </CardContent>
-            <CardFooter className="text-xs text-muted-foreground flex-wrap">
+            <CardFooter className="text-xs text-muted-foreground flex-wrap gap-x-2 gap-y-1">
               <span>Erstellt am: {formatDate(booking.createdAt, true)}</span>
-              <span className="mx-1">|</span>
+              <span className="hidden sm:inline">|</span>
               <span>Letzte Aktualisierung: {formatDate(booking.updatedAt, true)}</span>
             </CardFooter>
           </Card>
@@ -267,8 +266,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
               </CardHeader>
               <CardContent className="space-y-4">
                 
-                <h3 className="font-semibold text-lg flex items-center"><UserCircle className="mr-2 h-5 w-5 text-muted-foreground" /> Stammdaten Hauptgast</h3>
-                <div className="grid gap-4 sm:grid-cols-2">
+                <h3 className="font-semibold text-lg flex items-center"><UserCircle className="mr-2 h-5 w-5 text-primary" /> Stammdaten Hauptgast</h3>
+                <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
                   <DetailItem icon={User} label="Anrede" value={guestData.anrede} />
                   <DetailItem icon={User} label="Vollständiger Name" value={`${guestData.gastVorname || ''} ${guestData.gastNachname || ''}`} />
                   <DetailItem icon={CalendarDays} label="Geburtsdatum" value={formatDate(guestData.geburtsdatum)} />
@@ -277,13 +276,14 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                   <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
                 </div>
 
-                {(guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
+                {(guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl || guestData.hauptgastDokumenttyp) && (
                   <>
                     <Separator className="my-4" />
-                    <h3 className="font-semibold text-lg flex items-center"><BookUser className="mr-2 h-5 w-5 text-muted-foreground" /> Ausweisdokument Hauptgast</h3>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <DetailItem icon={FileText} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification document front" />
-                      <DetailItem icon={FileText} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification document back" />
+                    <h3 className="font-semibold text-lg flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary" /> Ausweisdokument Hauptgast</h3>
+                    <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
+                      <DetailItem icon={FileText} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
+                      <DetailItem icon={ImageIcon} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification front" />
+                      <DetailItem icon={ImageIcon} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification back" />
                     </div>
                   </>
                 )}
@@ -291,12 +291,12 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {guestData.mitreisende && guestData.mitreisende.length > 0 && (
                     <>
                         <Separator className="my-4" />
-                        <h3 className="font-semibold text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-muted-foreground" /> Mitreisende</h3>
+                        <h3 className="font-semibold text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Mitreisende</h3>
                         {guestData.mitreisende.map((mitreisender, index) => (
-                            <div key={mitreisender.id || index} className="p-3 border rounded-md bg-muted/20 mt-2">
-                                <h4 className="font-medium text-md mb-1">Mitreisender {index + 1}: {mitreisender.vorname} {mitreisender.nachname}</h4>
-                                <DetailItem icon={FileText} label="Ausweis Vorderseite" value={mitreisender.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="companion identification front"/>
-                                <DetailItem icon={FileText} label="Ausweis Rückseite" value={mitreisender.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="companion identification back"/>
+                            <div key={mitreisender.id || index} className="p-3 border rounded-md bg-muted/20 mt-2 space-y-2 shadow-sm">
+                                <h4 className="font-medium text-md">Mitreisender {index + 1}: {mitreisender.vorname} {mitreisender.nachname}</h4>
+                                <DetailItem icon={ImageIcon} label="Ausweis Vorderseite" value={mitreisender.ausweisVorderseiteUrl} isDocumentUrl documentHint="companion identification front"/>
+                                <DetailItem icon={ImageIcon} label="Ausweis Rückseite" value={mitreisender.ausweisRückseiteUrl} isDocumentUrl documentHint="companion identification back"/>
                             </div>
                         ))}
                     </>
@@ -305,12 +305,13 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {(guestData.paymentAmountSelection || guestData.zahlungsart || guestData.zahlungsbelegUrl) && (
                   <>
                     <Separator className="my-4" />
-                    <h3 className="font-semibold text-lg flex items-center"><CreditCard className="mr-2 h-5 w-5 text-muted-foreground" /> Zahlungsinformationen</h3>
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <h3 className="font-semibold text-lg flex items-center"><CreditCard className="mr-2 h-5 w-5 text-primary" /> Zahlungsinformationen</h3>
+                    <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
                       <DetailItem icon={Landmark} label="Auswahl Zahlungssumme" value={guestData.paymentAmountSelection === 'downpayment' ? 'Anzahlung (30%)' : (guestData.paymentAmountSelection === 'full_amount' ? 'Gesamtbetrag (100%)' : guestData.paymentAmountSelection)} />
                       <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
+                      <DetailItem icon={CalendarDays} label="Datum der Zahlung" value={formatDate(guestData.zahlungsdatum)} />
                       <DetailItem icon={Euro} label="Überwiesener Betrag" value={guestData.zahlungsbetrag} isCurrency />
-                      <DetailItem icon={FileText} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof" />
+                      <DetailItem icon={FileIcon} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof" />
                     </div>
                   </>
                 )}
@@ -318,8 +319,8 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {(guestData.agbAkzeptiert !== undefined || guestData.datenschutzAkzeptiert !== undefined) && (
                   <>
                     <Separator className="my-4" />
-                    <h3 className="font-semibold text-lg flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-muted-foreground" /> Zustimmungen</h3>
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <h3 className="font-semibold text-lg flex items-center"><ShieldCheck className="mr-2 h-5 w-5 text-primary" /> Zustimmungen</h3>
+                    <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
                       <DetailItem icon={ShieldCheck} label="AGB akzeptiert" value={guestData.agbAkzeptiert} />
                       <DetailItem icon={ShieldCheck} label="Datenschutz zugestimmt" value={guestData.datenschutzAkzeptiert} />
                     </div>
@@ -330,7 +331,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
           )}
         </div>
 
-        <Card className="lg:col-span-1 h-fit sticky top-20">
+        <Card className="lg:col-span-1 h-fit sticky top-20 shadow-md">
           <CardHeader>
             <CardTitle>Notizen &amp; Verlauf</CardTitle>
             <CardDescription>Interne Notizen und Buchungsverlauf.</CardDescription>
@@ -343,4 +344,3 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     </div>
   );
 }
-

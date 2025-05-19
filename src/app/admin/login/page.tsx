@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn } from "lucide-react";
-import { Logo } from "../../../components/shared/Logo"; // Changed to relative path
+import { Logo } from "../../../components/shared/Logo";
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 
@@ -28,7 +28,7 @@ export default function AdminLoginPage() {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      email: "info@pradell.com",
       password: "",
     },
   });
@@ -54,7 +54,7 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-blue-100 dark:from-background dark:to-blue-900/30 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background to-muted/30 dark:from-background dark:to-muted/50 p-4">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="items-center text-center">
           <Logo />
