@@ -1,32 +1,21 @@
 
 export type BookingStatus = "Pending Guest Information" | "Awaiting Confirmation" | "Confirmed" | "Cancelled";
 
-export interface Mitreisender { 
-  id: string;
-  vorname?: string;
-  nachname?: string;
-  alter?: number;
-  ausweisVorderseiteUrl?: string;
-  ausweisRückseiteUrl?: string;
-  ausweisVorderseiteFile?: File; 
-  ausweisRückseiteFile?: File;
-}
-
 export interface GuestSubmittedData {
   id?: string; 
-  // Schritt 1: Gast-Stammdaten
-  anrede?: 'Herr' | 'Frau' | 'Divers';
+  // Schritt 1: Gast-Stammdaten & Ausweis
   gastVorname?: string; 
   gastNachname?: string; 
-  geburtsdatum?: string; // ISO Format YYYY-MM-DD
   email?: string;
   telefon?: string;
-
-  // Schritt 2: Ausweisdokument(e) Hauptgast
+  alterHauptgast?: number;
   hauptgastDokumenttyp?: 'Reisepass' | 'Personalausweis' | 'Führerschein';
   hauptgastAusweisVorderseiteUrl?: string; 
   hauptgastAusweisRückseiteUrl?: string;  
 
+  // Schritt 2: Zahlungssumme (war vorher Zahlungswahl)
+  paymentAmountSelection?: 'downpayment' | 'full_amount';
+  
   // Schritt 3: Zahlungsinformationen
   zahlungsart?: 'Überweisung'; 
   zahlungsbetrag?: number; 
@@ -63,14 +52,13 @@ export interface Booking {
   
   verpflegung?: string;
   
-  // Deprecated individual room fields, use 'rooms' array instead for new bookings
-  zimmertyp?: string;
-  erwachsene?: number;
-  kinder?: number;
-  kleinkinder?: number;
-  alterKinder?: string;
+  zimmertyp?: string; // From first room, for easier display
+  erwachsene?: number; // From first room
+  kinder?: number; // From first room
+  kleinkinder?: number; // From first room
+  alterKinder?: string; // From first room
   
-  rooms?: RoomDetail[]; // Array to store details of all rooms
+  rooms?: RoomDetail[]; 
 
   interneBemerkungen?: string;
 
@@ -79,43 +67,44 @@ export interface Booking {
   updatedAt: Date | string; 
 }
 
-// --- Form Data Typen für die aktuellen Schritte ---
+// --- Form Data Typen für Server Actions ---
 
-export interface GastStammdatenFormData {
-  anrede: 'Herr' | 'Frau' | 'Divers';
+export interface GastStammdatenFormData { // For step 1 (Hauptgast Details & Ausweis)
   gastVorname: string;
   gastNachname: string;
-  geburtsdatum?: string;
   email: string;
   telefon: string;
+  alterHauptgast?: string; // Kommt als String vom Formular, Zod wandelt es in number um
+  // hauptgastDokumenttyp: 'Reisepass' | 'Personalausweis' | 'Führerschein'; // Ist im Bild nicht mehr explizit, wird aber noch im Schema verwendet
+  hauptgastAusweisVorderseiteFile?: File | null;
+  hauptgastAusweisRückseiteFile?: File | null;
 }
 
-export interface AusweisdokumenteFormData {
-  hauptgastDokumenttyp: 'Reisepass' | 'Personalausweis' | 'Führerschein';
-  hauptgastAusweisVorderseite?: File | null;
-  hauptgastAusweisRückseite?: File | null;
+export interface PaymentAmountSelectionFormData { // For step 2 (Zahlungssumme)
+  paymentAmountSelection: 'downpayment' | 'full_amount';
 }
 
-export interface ZahlungsinformationenFormData {
+export interface ZahlungsinformationenFormData { // For step 3 (Zahlungsdetails)
   zahlungsart: 'Überweisung';
   zahlungsdatum: string;
-  zahlungsbeleg?: File | null;
-  zahlungsbetrag: number; // Added from hidden input
+  zahlungsbelegFile?: File | null;
+  zahlungsbetrag: number;
 }
 
-export interface UebersichtBestaetigungFormData {
+export interface UebersichtBestaetigungFormData { // For step 4 (Übersicht)
   agbAkzeptiert: boolean; 
   datenschutzAkzeptiert: boolean; 
 }
 
-
-export interface CreateBookingFormData { // This is the data shape from the form before Zod transform
+export interface CreateBookingFormData { 
   guestFirstName: string;
   guestLastName: string;
-  price: string; // from input type=number, can be string
+  price: string; 
   checkInDate: string; 
   checkOutDate: string;
   verpflegung: string;
   interneBemerkungen?: string;
-  roomsData: string; // JSON string of RoomFormData[] (excluding client-side id)
+  roomsData: string; 
 }
+
+    
