@@ -1,7 +1,7 @@
 
 // This file now handles Firestore operations.
 import type { Booking, GuestSubmittedData } from "@/lib/definitions";
-import { db, firebaseInitializedCorrectly, storage } from "./firebase"; 
+import { db, firebaseInitializedCorrectly, storage, firebaseInitializationError } from "./firebase"; 
 import {
   collection,
   addDoc,
@@ -22,18 +22,20 @@ import { ref as storageRefFB, deleteObject } from "firebase/storage";
 function convertTimestampsToISO(bookingData: any): any {
   if (!bookingData) return null;
   const newBookingData = { ...bookingData };
-  for (const key in newBookingData) {
-    if (newBookingData[key] instanceof Timestamp) {
-      newBookingData[key] = newBookingData[key].toDate().toISOString();
+  const dateFieldsToConvert = ['checkInDate', 'checkOutDate', 'createdAt', 'updatedAt'];
+
+  dateFieldsToConvert.forEach(field => {
+    if (newBookingData[field] instanceof Timestamp) {
+      newBookingData[field] = newBookingData[field].toDate().toISOString();
     }
-  }
+  });
+
   if (newBookingData.guestSubmittedData) {
     const newGuestData = { ...newBookingData.guestSubmittedData };
-    for (const key in newGuestData) {
-        if (newGuestData[key] instanceof Timestamp) {
-            newGuestData[key] = newGuestData[key].toDate().toISOString();
-        }
+    if (newGuestData.submittedAt instanceof Timestamp) {
+        newGuestData.submittedAt = newGuestData.submittedAt.toDate().toISOString();
     }
+    // geburtsdatum and zahlungsdatum are stored as YYYY-MM-DD strings
     newBookingData.guestSubmittedData = newGuestData;
   }
   return newBookingData;
@@ -70,7 +72,6 @@ function convertDatesToTimestamps(data: any): any {
          delete newData.guestSubmittedData.submittedAt;
        }
     }
-     // geburtsdatum and zahlungsdatum are kept as YYYY-MM-DD strings as per current logic
   }
   return newData;
 }
@@ -79,9 +80,9 @@ function convertDatesToTimestamps(data: any): any {
 export async function getBookingsFromFirestore(): Promise<Booking[]> {
   const operationName = "[getBookingsFromFirestore]";
   if (!firebaseInitializedCorrectly || !db) {
-    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot fetch bookings. Check Firebase config and server logs. firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}`;
+    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot fetch bookings. Check Firebase config and server logs. Initialization error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
-    throw new Error(errorMessage); // Throw an error to be caught by the calling page
+    throw new Error(errorMessage); 
   }
   try {
     console.log(`${operationName} Attempting to fetch bookings from Firestore...`);
@@ -102,7 +103,7 @@ export async function getBookingsFromFirestore(): Promise<Booking[]> {
 export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>): Promise<Booking | null> {
   const operationName = "[addBookingToFirestore]";
    if (!firebaseInitializedCorrectly || !db) {
-    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot add booking. firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}`;
+    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot add booking. Initialization error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
@@ -113,15 +114,14 @@ export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'c
       createdAt: now, 
       updatedAt: now, 
     });
-    console.log(`${operationName} Attempting to add booking to Firestore. Data to save:`, JSON.stringify(dataToSave, null, 2).substring(0, 500) + "...");
+    console.log(`${operationName} Attempting to add booking to Firestore. Data (partial):`, JSON.stringify(dataToSave, null, 2).substring(0, 500) + "...");
     const docRef = await addDoc(collection(db, "bookings"), dataToSave);
     console.log(`${operationName} Booking successfully added to Firestore with ID:`, docRef.id);
-    // Fetch the just added document to ensure all fields (like Timestamps converted to server-side values) are consistent
     const newBookingDoc = await getDoc(docRef);
     if (newBookingDoc.exists()) {
         return convertTimestampsToISO({ ...newBookingDoc.data(), id: newBookingDoc.id }) as Booking;
     }
-    return null; // Should not happen if addDoc was successful
+    return null; 
   } catch (error: any) {
     console.error(`${operationName} Error adding booking to Firestore:`, error.message, error.stack?.substring(0,500));
     throw new Error(`${operationName} Failed to add booking: ${error.message}`);
@@ -131,7 +131,7 @@ export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'c
 export async function findBookingByTokenFromFirestore(token: string): Promise<Booking | null> {
   const operationName = "[findBookingByTokenFromFirestore]";
   if (!firebaseInitializedCorrectly || !db) {
-    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot find booking for token: "${token}". firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}`;
+    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Token: "${token}". Initialization error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
@@ -157,7 +157,7 @@ export async function findBookingByTokenFromFirestore(token: string): Promise<Bo
 export async function findBookingByIdFromFirestore(id: string): Promise<Booking | null> {
   const operationName = "[findBookingByIdFromFirestore]";
   if (!firebaseInitializedCorrectly || !db) {
-     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot find booking for ID: "${id}". firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}`;
+     const errorMessage = `${operationName} FATAL: Firestore is not initialized. ID: "${id}". Initialization error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
@@ -181,22 +181,23 @@ export async function findBookingByIdFromFirestore(id: string): Promise<Booking 
 export async function updateBookingInFirestore(id: string, updates: Partial<Booking>): Promise<boolean> {
   const operationName = "[updateBookingInFirestore]";
   if (!firebaseInitializedCorrectly || !db) {
-    const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot update booking with ID: "${id}". firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}`;
+    const errorMessage = `${operationName} FATAL: Firestore is not initialized. ID: "${id}". Initialization error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
   try {
-    console.log(`${operationName} Attempting to update booking in Firestore with ID: "${id}". Updates (pre-conversion):`, JSON.stringify(updates, null, 2).substring(0, 500) + "...");
+    const dataToUpdateLog = { ...updates };
+    delete (dataToUpdateLog as any).guestSubmittedData?.hauptgastAusweisVorderseiteFile; // Avoid logging File object
+    delete (dataToUpdateLog as any).guestSubmittedData?.hauptgastAusweisRückseiteFile;
+    delete (dataToUpdateLog as any).guestSubmittedData?.zahlungsbelegFile;
+    console.log(`${operationName} Attempting to update booking in Firestore with ID: "${id}". Updates (partial, pre-conversion):`, JSON.stringify(dataToUpdateLog, null, 2).substring(0, 500) + "...");
+    
     const docRef = doc(db, "bookings", id);
     const dataToUpdate = convertDatesToTimestamps({
         ...updates,
         updatedAt: new Date(), 
     });
     
-    // Firestore's updateDoc merges at the top level.
-    // For nested objects like guestSubmittedData, we need to provide the full merged object
-    // or use dot notation for specific fields if we only want to update parts of it.
-    // To ensure a full merge of guestSubmittedData, we'll fetch the existing document first.
     if (updates.guestSubmittedData) {
         const currentBookingSnap = await getDoc(docRef);
         if (currentBookingSnap.exists()) {
@@ -223,7 +224,7 @@ export async function updateBookingInFirestore(id: string, updates: Partial<Book
 export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<boolean> {
   const operationName = "[deleteBookingsFromFirestoreByIds]";
   if (!firebaseInitializedCorrectly || !db || !storage) {
-    const errorMessage = `${operationName} FATAL: Firebase (Firestore or Storage) is not initialized. Cannot delete bookings. firebaseInitializedCorrectly: ${firebaseInitializedCorrectly}, db: ${!!db}, storage: ${!!storage}`;
+    const errorMessage = `${operationName} FATAL: Firebase (Firestore or Storage) is not initialized. Cannot delete bookings. Initialization error: ${firebaseInitializationError || "Unknown (db/storage instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
@@ -237,7 +238,7 @@ export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<b
     const batch = writeBatch(db);
 
     for (const id of ids) {
-      const bookingToDelete = await findBookingByIdFromFirestore(id); // Fetches from Firestore
+      const bookingToDelete = await findBookingByIdFromFirestore(id); 
       if (bookingToDelete?.guestSubmittedData) {
           const urlsToDelete: (string | undefined)[] = [
               bookingToDelete.guestSubmittedData.hauptgastAusweisVorderseiteUrl,
