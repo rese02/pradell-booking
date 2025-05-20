@@ -29,7 +29,7 @@ function getFirebaseConfigValues() {
 let app: FirebaseApp | null = null;
 let db: Firestore | null = null;
 let storage: FirebaseStorage | null = null;
-let firebaseInitializedCorrectly = false; 
+let firebaseInitializedCorrectly = false;
 let firebaseInitializationError: string | null = null;
 
 if (typeof window === 'undefined') { // Ensure this runs only server-side during initialization
@@ -45,7 +45,7 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
   console.log("--- Checking Environment Variables ---");
   REQUIRED_ENV_VARS_CONFIG.forEach(configEntry => {
     const value = firebaseConfigValues[configEntry.key];
-    loadedConfigForLogging[configEntry.key] = value;
+    loadedConfigForLogging[configEntry.key] = value; // Store for logging the effective config
     const status = (value && value.trim() !== "")
       ? `Value: '${value.length > 40 && !['storageBucket', 'authDomain', 'projectId'].includes(configEntry.key) ? value.substring(0, 30) + '...' : value}'`
       : "NOT LOADED or EMPTY";
@@ -56,7 +56,8 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
     }
   });
   
-  loadedConfigForLogging.measurementId = firebaseConfigValues.measurementId; // Add optional var for logging
+  // Log optional measurementId
+  loadedConfigForLogging.measurementId = firebaseConfigValues.measurementId;
   const measurementIdValue = firebaseConfigValues.measurementId;
   const measurementIdStatus = (measurementIdValue && measurementIdValue.trim() !== "") ? `Value: '${measurementIdValue}'` : "Not set or empty";
   console.log(`[Firebase Env Check] NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID for 'measurementId': ${measurementIdStatus} (Optional)`);
@@ -74,7 +75,7 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
       } catch (e: any) {
         firebaseInitializationError = `CRITICAL: Firebase app initialization FAILED. Error: ${e.message}. Ensure firebaseConfig values from .env.local are correct and present.`;
         console.error(`[Firebase Init FAIL] ${firebaseInitializationError}`, e.stack?.substring(0,500));
-        app = null;
+        app = null; // Explicitly set to null on failure
       }
     } else {
       app = getApps()[0];
@@ -95,7 +96,7 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
         const firestoreErrorMsg = `CRITICAL: Firestore (db) service instance GET FAILED. Error: ${e.message}. This can happen if the Cloud Firestore API is not enabled for project '${firebaseConfigValues.projectId}' or the database instance hasn't been created in the Firebase Console.`;
         firebaseInitializationError = (firebaseInitializationError ? firebaseInitializationError + "; " : "") + firestoreErrorMsg;
         console.error(`[Firebase Init FAIL] ${firestoreErrorMsg}`, e.stack?.substring(0,500));
-        db = null;
+        db = null; // Explicitly set to null on failure
       }
 
       // Initialize Storage
@@ -108,15 +109,17 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
         const storageErrorMsg = `CRITICAL: Firebase Storage (storage) service instance GET FAILED. Error: ${e.message}. This often means 'storageBucket' ("${firebaseConfigValues.storageBucket}") in config is missing/incorrect, or Storage service not enabled/configured in Firebase console.`;
         firebaseInitializationError = (firebaseInitializationError ? firebaseInitializationError + "; " : "") + storageErrorMsg;
         console.error(`[Firebase Init FAIL] ${storageErrorMsg}`, e.stack?.substring(0,500));
-        storage = null;
+        storage = null; // Explicitly set to null on failure
       }
 
+      // Final check for overall initialization success
       if (app && dbInitSuccess && storageInitSuccess) {
         firebaseInitializedCorrectly = true;
-        firebaseInitializationError = null; 
+        firebaseInitializationError = null; // Clear any previous non-critical errors if all services are now fine
         console.log("[Firebase Init OK] Firebase Core App, Firestore Service, and Storage Service ALL INITIALIZED AND READY.");
       } else {
         firebaseInitializedCorrectly = false;
+        // Construct a comprehensive error message if not already set by a critical failure
         if (!firebaseInitializationError) { 
             let reasons = [];
             if (!app) reasons.push("Firebase App (app) object is null");
@@ -126,14 +129,14 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
         }
         console.error(`[Firebase Init FAIL] Overall initialization failed. 'firebaseInitializedCorrectly' is FALSE. Error details: ${firebaseInitializationError}`);
       }
-    } else { 
+    } else { // app is null, critical failure during initializeApp
       firebaseInitializedCorrectly = false;
-      if (!firebaseInitializationError) { 
+      if (!firebaseInitializationError) { // Ensure there's an error message
         firebaseInitializationError = "Firebase app object is null after initialization attempt. Firestore and Storage cannot be initialized.";
       }
       console.error(`[Firebase Init FAIL] ${firebaseInitializationError}. 'firebaseInitializedCorrectly' is FALSE.`);
     }
-  } else { 
+  } else { // Critical failure: Missing required environment variables
     firebaseInitializedCorrectly = false;
     firebaseInitializationError = `CRITICAL: One or more required Firebase environment variables are missing or empty: ${missingCriticalVars.join(', ')}. Firebase initialization SKIPPED.`;
     console.error(`[Firebase Init FAIL] ${firebaseInitializationError} 'firebaseInitializedCorrectly' is FALSE.`);
@@ -149,14 +152,14 @@ if (typeof window === 'undefined') { // Ensure this runs only server-side during
   // This path is less critical for the server-side errors we're seeing,
   // but good for consistency if these exports are used client-side.
   if (getApps().length > 0) {
-    if (!app) app = getApps()[0];
-    if (app && !db) {
+    if (!app) app = getApps()[0]; // Assign to module-level 'app'
+    if (app && !db) { // Check module-level 'db'
       try { db = getFirestore(app); } catch (e) { /* Client-side init errors less critical here */ }
     }
-    if (app && !storage) {
+    if (app && !storage) { // Check module-level 'storage'
       try { storage = getStorage(app); } catch (e) { /* Client-side init errors */ }
     }
-    // firebaseInitializedCorrectly reflects server's state. No need to re-evaluate here.
+    // firebaseInitializedCorrectly reflects server's state. No need to re-evaluate here on client.
   }
 }
 

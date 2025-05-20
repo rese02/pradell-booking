@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Booking, RoomDetail } from "@/lib/definitions";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon, Users2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import NextImage from "next/image"; 
 import { format, parseISO } from 'date-fns';
@@ -61,6 +61,8 @@ interface DetailItemProps {
 }
 
 const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCurrency, isLink, isBadge, badgeVariant, children, isDocumentUrl, documentHint }) => {
+  let displayValue: React.ReactNode = value;
+
   if (children) {
     return (
       <div className="flex items-start space-x-3 py-1">
@@ -72,74 +74,64 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
       </div>
     )
   }
-
+  
+  // Handle null, undefined, or empty string for value, unless it's a boolean `false`
   if (value === null || typeof value === 'undefined' || value === "") {
     if (typeof value === 'boolean' && value === false) {
       // Allow 'false' boolean to be displayed as "Nein"
     } else {
-      return null;
+      return null; // Don't render the item if value is effectively empty
     }
   }
 
-  let displayValue: React.ReactNode = value;
+
   if (typeof value === 'boolean') {
     displayValue = value ? "Ja" : "Nein";
   } else if (isCurrency && typeof value === 'number') {
     displayValue = formatCurrency(value);
-  } else if (isDocumentUrl && typeof value === 'string') {
+  } else if (isDocumentUrl && typeof value === 'string' && value.startsWith('https://firebasestorage.googleapis.com')) {
     let fileNameFromUrl = 'Datei';
-    let isFirebaseStorageUrl = value.startsWith('https://firebasestorage.googleapis.com');
-
-    if (isFirebaseStorageUrl) {
-        try {
-            const decodedUrl = decodeURIComponent(value);
-            const pathSegments = new URL(decodedUrl).pathname.split('/');
-            const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; 
-            if (lastSegmentEncoded) {
-                 fileNameFromUrl = lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) || lastSegmentEncoded;
-            }
-        } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
-    }
-
-
-    if (isFirebaseStorageUrl) {
-        const isImage = /\.(jpeg|jpg|gif|png|webp)(\?|$)/i.test(value) || value.includes('image%2F') || value.includes('image%2f');
-        const isPdf = /\.pdf(\?|$)/i.test(value) || value.includes('application%2Fpdf') || value.includes('application%2fpdf');
-
-        if (isImage) {
-            displayValue = (
-                <div className="flex flex-col gap-2 mt-1">
-                    <NextImage src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
-                    <Button asChild variant="outline" size="sm" className="w-fit">
-                        <Link href={value} target="_blank" rel="noopener noreferrer">
-                            <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen ({fileNameFromUrl})
-                        </Link>
-                    </Button>
-                </div>
-            );
-        } else if (isPdf) {
-             displayValue = (
-                <div className="flex items-center gap-2 mt-1">
-                    <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                    <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
-                        {fileNameFromUrl}
-                    </Link>
-                </div>
-            );
-        } else {
-             displayValue = (
-                <div className="flex items-center gap-2 mt-1">
-                    <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                     <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
-                        {fileNameFromUrl}
-                    </Link>
-                </div>
-            );
+    try {
+        const decodedUrl = decodeURIComponent(value);
+        const pathSegments = new URL(decodedUrl).pathname.split('/');
+        const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; 
+        if (lastSegmentEncoded) {
+             fileNameFromUrl = lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) || lastSegmentEncoded;
         }
-    } else if (isLink) { 
-        displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
+    } catch (e) { console.error("Error parsing filename from Firebase URL", e); }
+
+    const isImage = /\.(jpeg|jpg|gif|png|webp)(\?|$)/i.test(value) || value.includes('image%2Fjpeg') || value.includes('image%2Fpng') || value.includes('image%2Fgif') || value.includes('image%2Fwebp');
+    const isPdf = /\.pdf(\?|$)/i.test(value) || value.includes('application%2Fpdf');
+
+    if (isImage) {
+        displayValue = (
+            <div className="flex flex-col gap-2 mt-1">
+                <NextImage src={value} alt={label || 'Hochgeladenes Bild'} width={200} height={100} className="rounded-md border object-contain" data-ai-hint={documentHint || "document image"}/>
+                <Button asChild variant="outline" size="sm" className="w-fit">
+                    <Link href={value} target="_blank" rel="noopener noreferrer">
+                        <ImageIcon className="mr-2 h-4 w-4" /> Bild ansehen ({fileNameFromUrl})
+                    </Link>
+                </Button>
+            </div>
+        );
+    } else if (isPdf) {
+         displayValue = (
+            <div className="flex items-center gap-2 mt-1">
+                <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                <Link href={value} target="_blank" rel="noopener noreferrer" title={`PDF ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
+                    {fileNameFromUrl}
+                </Link>
+            </div>
+        );
     } else {
-      displayValue = <span className="text-sm text-muted-foreground italic">Dokument (Format nicht für Vorschau geeignet oder ungültige URL)</span>;
+         displayValue = (
+            <div className="flex items-center gap-2 mt-1">
+                <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                 <Link href={value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileNameFromUrl}`} className="text-primary hover:underline text-sm font-medium truncate max-w-xs">
+                    {fileNameFromUrl}
+                </Link>
+            </div>
+        );
     }
   } else if (isLink && typeof value === 'string') {
     displayValue = <Link href={value.startsWith('http') ? value : (value.includes('@') ? `mailto:${value}` : value)} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{value}</Link>;
@@ -261,7 +253,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
             <Card>
               <CardHeader>
                 <CardTitle>Vom Gast übermittelte Daten</CardTitle>
-                {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)} (Letzter Schritt: {guestData.lastCompletedStep})</CardDescription>}
+                {guestData.submittedAt && <CardDescription>Übermittelt am: {formatDate(guestData.submittedAt, true)} (Letzter Schritt: {guestData.lastCompletedStep !== undefined ? guestData.lastCompletedStep + 1 : 'N/A'})</CardDescription>}
                 {!guestData.submittedAt && booking.status === "Pending Guest Information" && <CardDescription>Gast hat das Formular noch nicht abgeschlossen.</CardDescription>}
               </CardHeader>
               <CardContent className="space-y-4">
@@ -276,12 +268,12 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                   <DetailItem icon={Phone} label="Telefon" value={guestData.telefon} />
                 </div>
 
-                {(guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl || guestData.hauptgastDokumenttyp) && (
+                {(guestData.hauptgastAusweisVorderseiteUrl || guestData.hauptgastAusweisRückseiteUrl) && (
                   <>
                     <Separator className="my-4" />
                     <h3 className="font-semibold text-lg flex items-center"><BookUser className="mr-2 h-5 w-5 text-primary" /> Ausweisdokument Hauptgast</h3>
                     <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
-                      <DetailItem icon={FileText} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} />
+                      {/* <DetailItem icon={FileText} label="Dokumenttyp" value={guestData.hauptgastDokumenttyp} /> remove if not used */}
                       <DetailItem icon={ImageIcon} label="Vorderseite" value={guestData.hauptgastAusweisVorderseiteUrl} isDocumentUrl documentHint="identification front" />
                       <DetailItem icon={ImageIcon} label="Rückseite" value={guestData.hauptgastAusweisRückseiteUrl} isDocumentUrl documentHint="identification back" />
                     </div>
@@ -291,7 +283,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                 {guestData.mitreisende && guestData.mitreisende.length > 0 && (
                     <>
                         <Separator className="my-4" />
-                        <h3 className="font-semibold text-lg flex items-center"><Users className="mr-2 h-5 w-5 text-primary" /> Mitreisende</h3>
+                        <h3 className="font-semibold text-lg flex items-center"><Users2 className="mr-2 h-5 w-5 text-primary" /> Mitreisende</h3>
                         {guestData.mitreisende.map((mitreisender, index) => (
                             <div key={mitreisender.id || index} className="p-3 border rounded-md bg-muted/20 mt-2 space-y-2 shadow-sm">
                                 <h4 className="font-medium text-md">Mitreisender {index + 1}: {mitreisender.vorname} {mitreisender.nachname}</h4>
@@ -309,7 +301,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     <div className="grid gap-y-2 gap-x-4 sm:grid-cols-2">
                       <DetailItem icon={Landmark} label="Auswahl Zahlungssumme" value={guestData.paymentAmountSelection === 'downpayment' ? 'Anzahlung (30%)' : (guestData.paymentAmountSelection === 'full_amount' ? 'Gesamtbetrag (100%)' : guestData.paymentAmountSelection)} />
                       <DetailItem icon={Landmark} label="Zahlungsart" value={guestData.zahlungsart} />
-                      <DetailItem icon={CalendarDays} label="Datum der Zahlung" value={formatDate(guestData.zahlungsdatum)} />
+                      {/* <DetailItem icon={CalendarDays} label="Datum der Zahlung" value={formatDate(guestData.zahlungsdatum)} /> removed as per new form */}
                       <DetailItem icon={Euro} label="Überwiesener Betrag" value={guestData.zahlungsbetrag} isCurrency />
                       <DetailItem icon={FileIcon} label="Zahlungsbeleg" value={guestData.zahlungsbelegUrl} isDocumentUrl documentHint="payment proof" />
                     </div>
@@ -344,3 +336,4 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
     </div>
   );
 }
+
