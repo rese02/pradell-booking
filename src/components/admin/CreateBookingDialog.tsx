@@ -1,8 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import { useActionState } from "react"; 
+import { useState, useEffect, useActionState } from "react"; 
 import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
-  DialogTrigger, // Added DialogTrigger
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,12 +30,14 @@ import { de } from 'date-fns/locale';
 import type { FormState } from "@/lib/actions"; 
 
 
+// Aligning with initialFormState in actions.ts
 const initialState: FormState = {
-  message: "",
-  errors: {},
+  message: null,
+  errors: null,
   bookingToken: null,
   success: false,
   actionToken: undefined,
+  updatedGuestData: null, // Added for consistency with FormState type
 };
 
 interface RoomFormData extends Omit<RoomDetail, 'erwachsene' | 'kinder' | 'kleinkinder'> {
@@ -76,12 +77,23 @@ export function CreateBookingDialog() {
   const resetFormFields = () => {
     setRooms([{...initialRoom, id: Date.now().toString()}]);
     setDateRange(undefined);
+    // Also reset form values by changing the key, which forces a re-render of the form
+    // and thus the internal state of uncontrolled components or react-hook-form if used.
+    // For simple uncontrolled inputs, this ensures they are cleared.
+    const formElement = document.getElementById("create-booking-form") as HTMLFormElement;
+    if (formElement) {
+        formElement.reset();
+    }
     setFormKey(Date.now()); 
   };
 
   useEffect(() => {
     if (!open) { 
         resetFormFields();
+        // Explicitly reset the action state when dialog closes to prevent stale messages
+        // This is a conceptual reset; useActionState doesn't have a direct reset.
+        // Re-keying the form via formKey is the primary mechanism.
+        // For the state itself, you might need to manage it more directly if re-keying isn't enough.
     }
   }, [open]);
 
@@ -103,31 +115,41 @@ export function CreateBookingDialog() {
           ),
           duration: 10000,
         });
-        setOpen(false);
+        setOpen(false); // Close dialog on success
         resetFormFields(); 
-      } else if (state.message && state.errors && Object.keys(state.errors).length > 0) {
-        let errorMessage = state.message || "Bitte überprüfen Sie die Eingabefelder.";
-        const fieldErrorsString = Object.entries(state.errors)
-            .map(([key, value]) => value ? `${Array.isArray(value) ? value.join(', ') : String(value)}` : '')
-            .filter(Boolean)
-            .join('. ');
-        if (fieldErrorsString) {
-          errorMessage += ` Fehler: ${fieldErrorsString}`;
+      } else if (state.message) { // Handles both Zod errors and other server errors
+        let errorMessage = state.message;
+        if (state.errors && Object.keys(state.errors).length > 0) {
+            const fieldErrorsString = Object.entries(state.errors)
+                .map(([key, value]) => {
+                    const messages = Array.isArray(value) ? value.join(', ') : String(value);
+                    // Make field names more user-friendly if needed
+                    let friendlyKey = key;
+                    if (key === 'guestFirstName') friendlyKey = 'Vorname';
+                    else if (key === 'guestLastName') friendlyKey = 'Nachname';
+                    else if (key === 'price') friendlyKey = 'Preis';
+                    else if (key === 'checkInDate') friendlyKey = 'Anreisedatum';
+                    else if (key === 'checkOutDate') friendlyKey = 'Abreisedatum';
+                    else if (key === 'roomsData') friendlyKey = 'Zimmerdetails';
+                    else if (key === 'dateRange') friendlyKey = 'Datumsbereich';
+                    else if (key === 'global') friendlyKey = 'Allgemein';
+                    return messages ? `${friendlyKey}: ${messages}` : '';
+                })
+                .filter(Boolean)
+                .join('. \n');
+            if (fieldErrorsString) {
+              errorMessage += `\nFehlerdetails: ${fieldErrorsString}`;
+            }
         }
         toast({
           variant: "destructive",
-          title: "Fehler beim Erstellen der Buchung",
+          title: state.success === false ? "Fehler beim Erstellen der Buchung" : "Hinweis",
           description: errorMessage,
-        });
-      } else if (state.message && !state.success && Object.keys(state.errors || {}).length === 0 && !state.bookingToken) {
-         toast({
-          variant: "destructive",
-          title: "Fehler",
-          description: state.message,
+          duration: 8000,
         });
       }
     }
-  }, [state, toast]); 
+  }, [state, toast]); // Removed resetFormFields from here as it's handled by success/dialog close
 
   const handleAddRoom = () => {
     setRooms([...rooms, { ...initialRoom, id: Date.now().toString() }]);
@@ -151,14 +173,14 @@ export function CreateBookingDialog() {
           <PlusCircle className="mr-2 h-4 w-4" /> Buchung erstellen
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl md:max-w-3xl"> {/* Increased width */}
+      <DialogContent className="sm:max-w-2xl md:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Neue Buchung erstellen</DialogTitle>
         </DialogHeader>
-        <form action={formAction} key={formKey}>
+        <form action={formAction} key={formKey} id="create-booking-form">
           <input type="hidden" name="roomsData" value={JSON.stringify(rooms.map(({id, ...rest}) => ({ 
             ...rest,
-            erwachsene: parseInt(rest.erwachsene, 10) || 0,
+            erwachsene: parseInt(rest.erwachsene, 10) || 0, // Ensure numbers
             kinder: parseInt(rest.kinder || "0", 10) || 0,
             kleinkinder: parseInt(rest.kleinkinder || "0", 10) || 0,
           })))} />
@@ -169,14 +191,14 @@ export function CreateBookingDialog() {
                   <User className="mr-2 h-4 w-4 text-muted-foreground" /> Vorname
                 </Label>
                 <Input id="guestFirstName" name="guestFirstName" />
-                {state.errors?.guestFirstName && <p className="text-xs text-destructive mt-1">{state.errors.guestFirstName[0]}</p>}
+                {state.errors?.guestFirstName && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.guestFirstName) ? state.errors.guestFirstName.join(', ') : state.errors.guestFirstName}</p>}
               </div>
               <div>
                 <Label htmlFor="guestLastName" className="flex items-center mb-1">
                   <User className="mr-2 h-4 w-4 text-muted-foreground" /> Nachname
                 </Label>
                 <Input id="guestLastName" name="guestLastName" />
-                 {state.errors?.guestLastName && <p className="text-xs text-destructive mt-1">{state.errors.guestLastName[0]}</p>}
+                 {state.errors?.guestLastName && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.guestLastName) ? state.errors.guestLastName.join(', ') : state.errors.guestLastName}</p>}
               </div>
               <div>
                 <Label htmlFor="dateRange" className="flex items-center mb-1">
@@ -221,7 +243,7 @@ export function CreateBookingDialog() {
                 <Input type="hidden" name="checkInDate" value={dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : ""} />
                 <Input type="hidden" name="checkOutDate" value={dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : ""} />
                 {(state.errors?.checkInDate || state.errors?.checkOutDate) && <p className="text-xs text-destructive mt-1">An- und Abreisedatum sind erforderlich.</p>}
-                 {state.errors?.dateRange && <p className="text-xs text-destructive mt-1">{state.errors.dateRange[0]}</p>}
+                 {state.errors?.dateRange && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.dateRange) ? state.errors.dateRange.join(', ') : state.errors.dateRange}</p>}
               </div>
             </div>
 
@@ -241,7 +263,7 @@ export function CreateBookingDialog() {
                     <SelectItem value="vollpension">Vollpension</SelectItem>
                   </SelectContent>
                 </Select>
-                {state.errors?.verpflegung && <p className="text-xs text-destructive mt-1">{state.errors.verpflegung[0]}</p>}
+                {state.errors?.verpflegung && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.verpflegung) ? state.errors.verpflegung.join(', ') : state.errors.verpflegung}</p>}
               </div>
               <div>
                 <Label htmlFor="price" className="flex items-center mb-1">
@@ -249,7 +271,7 @@ export function CreateBookingDialog() {
                 </Label>
                 <Input id="price" name="price" type="number" step="0.01" placeholder="Preis eingeben"/>
                 <p className="text-xs text-muted-foreground mt-1">Gesamtpreis für alle Zimmer in Euro.</p>
-                {state.errors?.price && <p className="text-xs text-destructive mt-1">{state.errors.price[0]}</p>}
+                {state.errors?.price && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.price) ? state.errors.price.join(', ') : state.errors.price}</p>}
               </div>
             </div>
 
@@ -324,7 +346,7 @@ export function CreateBookingDialog() {
                  <MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" /> Interne Bemerkungen (Optional)
                 </Label>
               <Textarea id="interneBemerkungen" name="interneBemerkungen" placeholder="Fügen Sie hier interne Notizen zur Buchung hinzu..." rows={3}/>
-              {state.errors?.interneBemerkungen && <p className="text-xs text-destructive mt-1">{state.errors.interneBemerkungen[0]}</p>}
+              {state.errors?.interneBemerkungen && <p className="text-xs text-destructive mt-1">{Array.isArray(state.errors.interneBemerkungen) ? state.errors.interneBemerkungen.join(', ') : state.errors.interneBemerkungen}</p>}
             </div>
           </div>
 
@@ -339,5 +361,4 @@ export function CreateBookingDialog() {
     </Dialog>
   );
 }
-
     
