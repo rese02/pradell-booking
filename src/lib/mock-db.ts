@@ -23,22 +23,24 @@ function convertTimestampsToISO(bookingData: any): any {
   if (!bookingData) return null;
   const newBookingData = { ...bookingData };
   
-  // Fields directly in Booking
-  const bookingDateFields: (keyof Booking)[] = ['checkInDate', 'checkOutDate', 'createdAt', 'updatedAt'];
-  bookingDateFields.forEach(field => {
-    if (newBookingData[field] && newBookingData[field] instanceof Timestamp) {
-      newBookingData[field] = newBookingData[field].toDate().toISOString();
+  const processField = (obj: any, field: string) => {
+    if (obj && typeof obj[field] !== 'undefined') {
+        if (obj[field] instanceof Timestamp) {
+            obj[field] = obj[field].toDate().toISOString();
+        } else if (typeof obj[field] === 'object' && obj[field] !== null && 'seconds' in obj[field] && 'nanoseconds' in obj[field]) {
+            obj[field] = new Timestamp(obj[field].seconds, obj[field].nanoseconds).toDate().toISOString();
+        } else if (obj[field] instanceof Date) {
+            obj[field] = obj[field].toISOString();
+        }
     }
-  });
+  };
+  
+  const bookingDateFields: (keyof Booking)[] = ['checkInDate', 'checkOutDate', 'createdAt', 'updatedAt'];
+  bookingDateFields.forEach(field => processField(newBookingData, field as string));
 
-  // Fields in GuestSubmittedData
   if (newBookingData.guestSubmittedData) {
     const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
-    guestDataFields.forEach(field => {
-      if (newBookingData.guestSubmittedData[field] && newBookingData.guestSubmittedData[field] instanceof Timestamp) {
-        newBookingData.guestSubmittedData[field] = newBookingData.guestSubmittedData[field].toDate().toISOString();
-      }
-    });
+    guestDataFields.forEach(field => processField(newBookingData.guestSubmittedData, field as string));
   }
   return newBookingData;
 }
@@ -46,29 +48,27 @@ function convertTimestampsToISO(bookingData: any): any {
 // Helper to convert date strings or Date objects to Firestore Timestamps for saving
 function convertDatesToTimestamps(data: any): any {
   if (!data) return data;
-  const newData = JSON.parse(JSON.stringify(data)); // Deep clone
+  const newData = JSON.parse(JSON.stringify(data)); 
   
   const processField = (obj: any, field: string) => {
-    if (obj && typeof obj[field] !== 'undefined') { // Check if field exists
-      if (obj[field] instanceof Timestamp) { // Already a timestamp
+    if (obj && typeof obj[field] !== 'undefined') { 
+      if (obj[field] instanceof Timestamp) { 
         return; 
       }
       const dateValue = (typeof obj[field] === 'string' || obj[field] instanceof Date) ? new Date(obj[field]) : null;
       if (dateValue && !isNaN(dateValue.getTime())) {
         obj[field] = Timestamp.fromDate(dateValue);
-      } else if (obj[field] !== null && obj[field] !== '') { // Avoid converting empty strings or null to invalid Timestamps
-        console.warn(`[Firestore Helper] Invalid or unhandled date value for field ${field}:`, obj[field], ". Keeping as is or consider removing if problematic.");
-      } else if (obj[field] === '' || obj[field] === null) { // Remove if empty or null and meant to be a Timestamp
+      } else if (obj[field] !== null && obj[field] !== '') { 
+        console.warn(`[Firestore Helper] Invalid or unhandled date value for field ${field}:`, obj[field], ". Kept as is.");
+      } else if (obj[field] === '' || obj[field] === null) { 
          delete obj[field]; 
       }
     }
   };
   
-  // Fields in Booking
   const bookingDateFields: (keyof Booking)[] = ['checkInDate', 'checkOutDate', 'createdAt', 'updatedAt'];
   bookingDateFields.forEach(field => processField(newData, field as string));
 
-  // Fields in GuestSubmittedData
   if (newData.guestSubmittedData) {
     const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
     guestDataFields.forEach(field => processField(newData.guestSubmittedData, field as string));
@@ -100,6 +100,9 @@ export async function getBookingsFromFirestore(): Promise<Booking[]> {
     if (errorMessageText.includes("missing or insufficient permissions")) {
         console.error(`${operationName} Error fetching bookings from Firestore: "Missing or insufficient permissions."`, error);
         throw new Error(`Fehler beim Laden der Buchungen: Fehlende oder unzureichende Berechtigungen für Firestore. Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln. (Originalfehler: ${error.message})`);
+    } else if (errorMessageText.includes("firestore api has not been used") || errorMessageText.includes("5 not_found")) {
+        console.error(`${operationName} Error fetching bookings: Firestore API not enabled or database not found.`, error);
+        throw new Error(`Fehler beim Laden der Buchungen: Die Cloud Firestore API ist möglicherweise nicht für Ihr Projekt aktiviert oder die Datenbankinstanz wurde nicht gefunden. Bitte überprüfen Sie die Google Cloud & Firebase Console. (Originalfehler: ${error.message})`);
     }
     console.error(`${operationName} Error fetching bookings from Firestore:`, error.message, error.stack?.substring(0,500));
     throw new Error(`${operationName} Failed to fetch bookings: ${error.message}`);
@@ -117,11 +120,11 @@ export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'c
     const now = new Date();
     const dataToSave = convertDatesToTimestamps({
       ...bookingData,
-      guestSubmittedData: bookingData.guestSubmittedData || { lastCompletedStep: -1 }, // Ensure guestSubmittedData exists
+      guestSubmittedData: bookingData.guestSubmittedData || { lastCompletedStep: -1 }, 
       createdAt: now, 
       updatedAt: now, 
     });
-    console.log(`${operationName} Attempting to add booking to Firestore. Data (partial):`, JSON.stringify(dataToSave, null, 2).substring(0, 500) + "...");
+    console.log(`${operationName} Attempting to add booking to Firestore. Data (partial):`, JSON.stringify(dataToSave, (k,v) => typeof v === 'bigint' ? v.toString() : v , 2).substring(0, 500) + "...");
     const docRef = await addDoc(collection(db, "bookings"), dataToSave);
     console.log(`${operationName} Booking successfully added to Firestore with ID:`, docRef.id);
     return docRef.id;
@@ -137,8 +140,7 @@ export async function findBookingByTokenFromFirestore(token: string): Promise<Bo
   if (!firebaseInitializedCorrectly || !db) {
     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Token: "${token}". Init error: ${firebaseInitializationError || "Unknown (db instance is null or firebaseInitializedCorrectly is false)"}`;
     console.error(errorMessage);
-    // throw new Error(errorMessage); // Throwing error to be caught by page component
-    return null; // Or throw to be caught by the page
+    return null; 
   }
   try {
     const bookingsCol = collection(db, "bookings");
@@ -157,8 +159,7 @@ export async function findBookingByTokenFromFirestore(token: string): Promise<Bo
     return null;
   } catch (error: any) {
     console.error(`${operationName} Error finding booking by token "${token}" in Firestore:`, error.message, error.stack?.substring(0,800));
-    // throw new Error(`${operationName} Failed to find booking by token "${token}": ${error.message}`);
-    return null; // Or throw to be caught by the page
+    return null; 
   }
 }
 
@@ -171,6 +172,10 @@ export async function findBookingByIdFromFirestore(id: string): Promise<Booking 
     throw new Error(errorMessage);
   }
   try {
+    if (typeof id !== 'string' || id.trim() === '') {
+        console.warn(`${operationName} Invalid ID provided: "${id}". Returning null.`);
+        return null;
+    }
     const docRef = doc(db, "bookings", id);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -195,7 +200,6 @@ export async function updateBookingInFirestore(id: string, updates: Partial<Book
   }
   try {
     const dataToUpdateLog = { ...updates };
-    // Sanitize log by removing File objects if any were accidentally passed
     Object.keys(dataToUpdateLog).forEach(key => {
         if ((dataToUpdateLog as any)[key] instanceof File) {
             delete (dataToUpdateLog as any)[key];
@@ -203,24 +207,22 @@ export async function updateBookingInFirestore(id: string, updates: Partial<Book
         if (key === 'guestSubmittedData' && typeof (dataToUpdateLog as any)[key] === 'object' && (dataToUpdateLog as any)[key] !== null) {
             const guestData = (dataToUpdateLog as any)[key];
             Object.keys(guestData).forEach(gKey => {
-                 if (guestData[gKey] instanceof File) { // Should not happen with current logic but good for safety
+                 if (guestData[gKey] instanceof File) { 
                     delete guestData[gKey];
                 }
             });
         }
     });
 
-    console.log(`${operationName} Attempting to update booking in Firestore with ID: "${id}". Updates (partial, pre-conversion, sanitized for log):`, JSON.stringify(dataToUpdateLog, null, 2).substring(0, 800) + "...");
+    console.log(`${operationName} Attempting to update booking in Firestore with ID: "${id}". Updates (partial, pre-conversion, sanitized for log):`, JSON.stringify(dataToUpdateLog, (k,v) => typeof v === 'bigint' ? v.toString() : v, 2).substring(0, 800) + "...");
     
     const docRef = doc(db, "bookings", id);
     
-    // Ensure updatedAt is always set
     const dataToUpdate = convertDatesToTimestamps({
         ...updates,
         updatedAt: new Date(), 
     });
     
-    // Smart merging of guestSubmittedData if it's part of the updates
     if (updates.guestSubmittedData) {
         console.log(`${operationName} guestSubmittedData is part of updates for booking ID "${id}". Attempting merge.`);
         const currentBookingSnap = await getDoc(docRef);
@@ -228,12 +230,11 @@ export async function updateBookingInFirestore(id: string, updates: Partial<Book
             const currentBookingData = currentBookingSnap.data() as Booking;
             const currentGuestData = currentBookingData.guestSubmittedData || { lastCompletedStep: -1 };
             
-            // Ensure timestamps from currentGuestData are converted before merge if they are Timestamps
             const normalizedCurrentGuestData = convertTimestampsToISO({ ...currentGuestData });
 
             const mergedGuestData = {
-                ...normalizedCurrentGuestData, // Existing data (potentially with ISO string dates)
-                ...dataToUpdate.guestSubmittedData, // New data (dates already converted to Timestamps by convertDatesToTimestamps)
+                ...normalizedCurrentGuestData, 
+                ...dataToUpdate.guestSubmittedData, 
             };
             dataToUpdate.guestSubmittedData = mergedGuestData;
             console.log(`${operationName} Merged guestSubmittedData for booking ID "${id}".`);
@@ -260,56 +261,70 @@ export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<b
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
-  if (!ids || ids.length === 0) {
-    console.warn(`${operationName} No IDs provided for deletion.`);
+  if (!Array.isArray(ids) || ids.length === 0) {
+    console.warn(`${operationName} No valid IDs provided for deletion. Received:`, ids);
     return true; 
   }
 
   try {
     console.log(`${operationName} Attempting to delete ${ids.length} bookings from Firestore: ${ids.join(', ')}`);
-    const batch = writeBatch(db);
+    const batch = writeBatch(db!); // db is checked by firebaseInitializedCorrectly
 
     for (const id of ids) {
-      const bookingToDelete = await findBookingByIdFromFirestore(id); 
-      if (bookingToDelete?.guestSubmittedData) {
-          const guestData = bookingToDelete.guestSubmittedData;
-          const urlsToDelete: (string | undefined)[] = [
-              guestData.hauptgastAusweisVorderseiteUrl,
-              guestData.hauptgastAusweisRückseiteUrl,
-              guestData.zahlungsbelegUrl,
-          ];
-          if (guestData.mitreisende) {
-            guestData.mitreisende.forEach(mitreisender => {
-                urlsToDelete.push(mitreisender.ausweisVorderseiteUrl);
-                urlsToDelete.push(mitreisender.ausweisRückseiteUrl);
-            });
-          }
-
-          for (const url of urlsToDelete) {
-              if (url && typeof url === 'string' && url.includes('firebasestorage.googleapis.com')) {
-                  try {
-                      const fileStorageRef = storageRefFB(storage, url); 
-                      await deleteObject(fileStorageRef);
-                      console.log(`${operationName} File ${url} deleted from Firebase Storage for booking ${id}.`);
-                  } catch (fileDeleteError: any) {
-                      if (fileDeleteError.code === 'storage/object-not-found') {
-                        console.warn(`${operationName} WARN: File ${url} for booking ${id} not found in Storage, skipping deletion: ${fileDeleteError.message}`);
-                      } else {
-                        console.error(`${operationName} ERROR: Failed to delete file ${url} from Storage for booking ${id}: ${fileDeleteError.message} (Code: ${fileDeleteError.code}). Continuing with Firestore deletion.`, fileDeleteError);
-                        // Decide if this should make the whole operation fail. For now, it continues.
-                      }
-                  }
-              }
-          }
+      if (typeof id !== 'string' || id.trim() === '') {
+        console.warn(`${operationName} Skipping invalid ID for deletion: "${id}"`);
+        continue;
       }
-      const docRef = doc(db, "bookings", id);
-      batch.delete(docRef);
+      try {
+        const docRef = doc(db!, "bookings", id);
+        const bookingToDelete = await findBookingByIdFromFirestore(id); 
+        
+        if (bookingToDelete?.guestSubmittedData) {
+            const guestData = bookingToDelete.guestSubmittedData;
+            const urlsToDelete: (string | undefined)[] = [
+                guestData.hauptgastAusweisVorderseiteUrl,
+                guestData.hauptgastAusweisRückseiteUrl,
+                guestData.zahlungsbelegUrl,
+            ];
+            if (guestData.mitreisende && Array.isArray(guestData.mitreisende)) {
+              guestData.mitreisende.forEach(mitreisender => {
+                  if (mitreisender) { // Check if mitreisender object itself is not null/undefined
+                    urlsToDelete.push(mitreisender.ausweisVorderseiteUrl);
+                    urlsToDelete.push(mitreisender.ausweisRückseiteUrl);
+                  }
+              });
+            }
+
+            for (const url of urlsToDelete) {
+                if (url && typeof url === 'string' && url.includes('firebasestorage.googleapis.com')) {
+                    try {
+                        const fileStorageRef = storageRefFB(storage!, url); 
+                        await deleteObject(fileStorageRef);
+                        console.log(`${operationName} File ${url.substring(0,100)}... deleted from Firebase Storage for booking ${id}.`);
+                    } catch (fileDeleteError: any) {
+                        if (fileDeleteError.code === 'storage/object-not-found') {
+                          console.warn(`${operationName} WARN: File ${url.substring(0,100)}... for booking ${id} not found in Storage, skipping deletion: ${fileDeleteError.message}`);
+                        } else {
+                          console.error(`${operationName} ERROR: Failed to delete file ${url.substring(0,100)}... from Storage for booking ${id}: ${fileDeleteError.message} (Code: ${fileDeleteError.code}). Continuing with Firestore deletion.`, fileDeleteError);
+                        }
+                    }
+                }
+            }
+        }
+        batch.delete(docRef);
+        console.log(`${operationName} Document ID ${id} added to batch delete.`);
+      } catch (loopError: any) {
+        console.error(`${operationName} Error processing ID "${id}" for deletion: ${loopError.message}. This ID will be skipped in the batch.`, { stack: loopError.stack?.substring(0, 300), bookingId: id });
+        // Decide if one error should stop the whole batch. For now, continue with other IDs.
+        // To make it all-or-nothing, re-throw here.
+      }
     }
     await batch.commit();
-    console.log(`${operationName} Successfully deleted ${ids.length} booking(s) from Firestore.`);
+    console.log(`${operationName} Batch commit successful for deletion of ${ids.length} booking(s) (or those that didn't error).`);
     return true;
   } catch (error: any) {
     console.error(`${operationName} Error deleting bookings from Firestore: ${ids.join(', ')}`, error.message, error.stack?.substring(0,500));
      throw new Error(`${operationName} Failed to delete bookings: ${error.message}`);
   }
 }
+
