@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle, Users, Briefcase, BarChart3 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getBookingsFromFirestore } from "@/lib/mock-db"; // Now points to Firestore operations
+import { getBookingsFromFirestore } from "@/lib/mock-db"; 
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils"; // Added missing import
 
 async function fetchBookings(): Promise<Booking[]> {
   const operationName = "[AdminDashboardPage fetchBookings]";
@@ -180,10 +181,10 @@ export default async function AdminDashboardPage() {
              <StatCard
               title="Ausstehende Infos"
               value={stats.totalPendingBookings}
-              icon={AlertTriangle} // Or other suitable icon
+              icon={AlertTriangle} 
               description="Warten auf Gastdaten"
               tooltipText="Gesamtzahl aller Buchungen mit dem Status 'Pending Guest Information'."
-              className="bg-yellow-500/10 border-yellow-500/50" // Example of distinct styling
+              className="bg-yellow-500/10 border-yellow-500/50" 
             />
           </div>
         )}
@@ -228,4 +229,6 @@ export default async function AdminDashboardPage() {
     </TooltipProvider>
   );
 }
+    
+
     
