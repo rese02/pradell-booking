@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getBookingsFromFirestore } from "@/lib/mock-db"; // Now fetches from Firestore
+import { getBookingsFromFirestore } from "@/lib/mock-db"; 
 
 async function fetchBookings(): Promise<Booking[]> {
   console.log("[AdminDashboardPage] Fetching bookings from Firestore...");
@@ -85,17 +85,27 @@ export default async function AdminDashboardPage() {
 
   try {
     console.log("[AdminDashboardPage] Attempting to fetch bookings and calculate stats...");
-    bookings = await fetchBookings();
+    bookings = await fetchBookings(); // This will throw if Firestore is not initialized
     stats = await getDashboardStats(bookings);
     console.log("[AdminDashboardPage] Successfully fetched bookings and calculated stats.");
   } catch (error: any) {
     console.error("[AdminDashboardPage] Critical error fetching data for dashboard:", error.message, error.stack?.substring(0,500));
-    if (error.message.includes("Firestore is not initialized")) {
-        fetchError = "Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID) und dass die Firestore-Dienste in der Firebase-Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde. Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.";
+    if (error.message.includes("FATAL: Firestore is not initialized")) {
+        fetchError = `Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden. 
+                      Ursache: ${error.message}. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID) 
+                      und dass die Firestore-Dienste (Firestore Database und Cloud Firestore API) in der Firebase/Google Cloud Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde. 
+                      Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.`;
     } else if (error.message.includes("Missing or insufficient permissions")) {
-        fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore. Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole. Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message})`;
-    } else {
-        fetchError = `Fehler beim Laden der Buchungsdaten: ${error.message}. Bitte überprüfen Sie die Server-Konfiguration und -Logs.`;
+        fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore. 
+                      Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole. 
+                      Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message})`;
+    } else if (error.message.includes("Query requires an index")) {
+        fetchError = `Fehler beim Laden der Buchungsdaten: Eine benötigte Index-Konfiguration für Firestore fehlt. 
+                      Bitte überprüfen Sie die Firebase Konsole (Firestore > Indizes). Firestore könnte dort vorschlagen, den Index zu erstellen. 
+                      (Fehlermeldung: ${error.message})`;
+    }
+     else {
+        fetchError = `Unbekannter Fehler beim Laden der Buchungsdaten: ${error.message}. Bitte überprüfen Sie die Server-Konfiguration und -Logs.`;
     }
   }
 
@@ -122,7 +132,7 @@ export default async function AdminDashboardPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-destructive-foreground">{fetchError}</p>
-              <p className="text-xs text-muted-foreground mt-2">Bitte überprüfen Sie die Server-Logs für weitere Details und stellen Sie sicher, dass die Firebase-Konfiguration korrekt ist (insbesondere die `.env.local`-Datei und die aktivierten Firebase-Dienste in der Konsole, sowie die Firestore Sicherheitsregeln).</p>
+              <p className="text-xs text-muted-foreground mt-2">Bitte überprüfen Sie die Server-Logs für weitere Details und stellen Sie sicher, dass Ihre Firebase-Konfiguration (insbesondere `.env.local` und die Dienste in der Firebase/Google Cloud Konsole) sowie Ihre Firestore Sicherheitsregeln korrekt sind.</p>
             </CardContent>
           </Card>
         )}
@@ -167,7 +177,7 @@ export default async function AdminDashboardPage() {
                  <div className="flex flex-col items-center justify-center py-12 text-center">
                     <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                     <h3 className="text-xl font-semibold text-destructive">Daten konnten nicht geladen werden</h3>
-                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben und die Server-Logs für Details zur Firebase-Initialisierung und Firestore-Berechtigungen.</p>
+                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben und die Server-Logs für Details.</p>
                 </div>
             ) : bookings.length > 0 ? (
                 <BookingsDataTable data={bookings} />
@@ -175,7 +185,7 @@ export default async function AdminDashboardPage() {
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                     <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
                     <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
-                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden oder es konnten keine Daten geladen werden. Erstellen Sie eine neue Buchung.</p>
+                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
                     <div className="mt-6">
                          <CreateBookingDialog />
                     </div>
