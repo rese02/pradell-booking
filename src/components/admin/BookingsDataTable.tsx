@@ -159,6 +159,7 @@ export const columns: ColumnDef<Booking>[] = [
     enableHiding: false,
     cell: ({ row }) => {
       const booking = row.original;
+      const { toast } = useToast(); // useToast hook for local notifications
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -173,8 +174,20 @@ export const columns: ColumnDef<Booking>[] = [
               onClick={() => {
                 if (typeof window !== "undefined") {
                   navigator.clipboard.writeText(getFullBookingLink(booking.bookingToken))
-                    .then(() => alert("Buchungslink in die Zwischenablage kopiert!"))
-                    .catch(err => console.error("Fehler beim Kopieren: ", err));
+                    .then(() => {
+                        toast({
+                            title: "Link kopiert!",
+                            description: "Buchungslink in die Zwischenablage kopiert.",
+                        });
+                    })
+                    .catch(err => {
+                        console.error("Fehler beim Kopieren: ", err);
+                        toast({
+                            variant: "destructive",
+                            title: "Fehler",
+                            description: "Link konnte nicht kopiert werden.",
+                        });
+                    });
                 }
               }}
             >
@@ -228,18 +241,22 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
   const handleDeleteSelected = async () => {
     const selectedRows = table.getFilteredSelectedRowModel().rows;
     if (selectedRows.length === 0) {
-      toast({ variant: "destructive", title: "Keine Buchungen ausgewählt" });
+      toast({ variant: "destructive", title: "Keine Buchungen ausgewählt", description: "Bitte wählen Sie mindestens eine Buchung aus." });
+      setIsDeleteDialogOpen(false); // Close dialog
+      setConfirmationText("");    // Reset text
       return;
     }
     if (confirmationText !== "LÖSCHEN") {
-      toast({ variant: "destructive", title: "Bestätigungstext falsch" });
+      toast({ variant: "destructive", title: "Bestätigungstext falsch", description: "Bitte geben Sie 'LÖSCHEN' korrekt ein, um fortzufahren." });
+      // Keep dialog open and confirmation text as is
       return;
     }
 
     const bookingIdsToDelete = selectedRows.map(row => row.original.id);
     
     try {
-      const result = await deleteBookingsAction(bookingIdsToDelete);
+      const initialPrevState = { success: false, message: "", actionToken: undefined };
+      const result = await deleteBookingsAction(initialPrevState, bookingIdsToDelete);
       if (result.success) {
         toast({ title: "Erfolg", description: result.message });
         table.resetRowSelection(); 
@@ -247,7 +264,11 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
         toast({ variant: "destructive", title: "Fehler", description: result.message });
       }
     } catch (error) {
-      toast({ variant: "destructive", title: "Fehler", description: "Ein unerwarteter Fehler ist aufgetreten." });
+        let errorMessage = "Ein unerwarteter Fehler ist aufgetreten.";
+        if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+      toast({ variant: "destructive", title: "Fehler beim Löschen", description: errorMessage });
     } finally {
       setIsDeleteDialogOpen(false);
       setConfirmationText("");
@@ -285,7 +306,7 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
                         <AlertDialogTitle>Sind Sie absolut sicher?</AlertDialogTitle>
                         <AlertDialogDescription>
                         Diese Aktion kann nicht rückgängig gemacht werden. Dadurch werden die ausgewählten
-                        Buchungen dauerhaft gelöscht.
+                        Buchungen dauerhaft gelöscht. Dies beinhaltet auch alle zugehörigen Dokumente.
                         Um fortzufahren, geben Sie bitte "LÖSCHEN" in das Textfeld ein.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
@@ -428,3 +449,4 @@ export function BookingsDataTable({ data }: BookingsDataTableProps) {
     </div>
   );
 }
+
