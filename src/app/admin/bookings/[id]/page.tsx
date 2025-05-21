@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Booking, RoomDetail, Mitreisender } from "@/lib/definitions"; // Added Mitreisender
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon, Users2, Hotel } from "lucide-react";
+import { ArrowLeft, CalendarDays, Edit3, Euro, FileText, Home, Mail, Phone, User, MessageSquare, Link2, Users, Landmark, ShieldCheck, Briefcase, BookUser, UserCircle, CreditCard, FileIcon, Image as ImageIcon, Users2, Hotel, Info } from "lucide-react"; // Added Info here
 import { Separator } from "@/components/ui/separator";
 import NextImage from "next/image"; 
 import { format, parseISO } from 'date-fns';
@@ -12,22 +12,25 @@ import { de } from 'date-fns/locale';
 import { findBookingByIdFromFirestore } from "@/lib/mock-db";
 import { notFound } from "next/navigation";
 import { cn } from "@/lib/utils";
+import type { ReactNode } from "react"; // Added ReactNode for SectionCard children
 
 async function getBookingDetails(id: string): Promise<Booking | null> {
-  console.log(`[Page admin/bookings/[id]] Attempting to fetch booking details from Firestore for id: "${id}"`);
+  const operationName = "[Page admin/bookings/[id] getBookingDetails]";
+  console.log(`${operationName} Attempting to fetch booking details from Firestore for id: "${id}"`);
   try {
     const booking = await findBookingByIdFromFirestore(id);
     if (!booking) {
-      console.warn(`[Page admin/bookings/[id]] Booking with id ${id} not found in Firestore.`);
+      console.warn(`${operationName} Booking with id ${id} not found in Firestore.`);
     } else {
       const guestDataSummary = booking.guestSubmittedData
         ? { submitted: !!booking.guestSubmittedData.submittedAt, lastStep: booking.guestSubmittedData.lastCompletedStep, hasEmail: !!booking.guestSubmittedData.email }
         : { submitted: false };
-      console.log(`[Page admin/bookings/[id]] Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
+      console.log(`${operationName} Found booking for id ${id} from Firestore. Guest Data Summary:`, guestDataSummary);
     }
     return booking;
   } catch (error) {
-    console.error(`[Page admin/bookings/[id]] Error fetching booking ${id}:`, error);
+    console.error(`${operationName} Error fetching booking ${id}:`, error);
+    // Potentially re-throw or return a more specific error state
     return null;
   }
 }
@@ -39,6 +42,7 @@ const formatDate = (dateString?: Date | string, includeTime = false) => {
     const formatString = includeTime ? "dd. MMM yyyy, HH:mm 'Uhr'" : "dd. MMM yyyy";
     return format(date, formatString, { locale: de });
   } catch (error) {
+    console.warn(`[formatDate] Error parsing date: ${dateString}`, error);
     return "Ungültiges Datum";
   }
 };
@@ -50,25 +54,40 @@ const formatCurrency = (amount?: number) => {
 
 const getFileNameFromUrl = (url?: string, defaultText = "N/A") => {
     if (!url) return defaultText;
-    if (url.startsWith('data:')) return "Bilddatei (Data URI)";
-    if (url.startsWith('mock-file-url:')) return url.substring('mock-file-url:'.length);
+    // Handle Data URIs for images (already done)
+    if (url.startsWith('data:image')) return "Bilddatei (Data URI)"; // Simplified name for data URIs
     
-    try {
-        const decodedUrl = decodeURIComponent(url);
-        const pathSegments = new URL(decodedUrl).pathname.split('/');
-        const lastSegmentEncoded = pathSegments.pop()?.split('?')[0]; 
-        if (lastSegmentEncoded) {
-             const nameWithoutTimestamp = lastSegmentEncoded.includes('_') ? lastSegmentEncoded.substring(lastSegmentEncoded.indexOf('_') + 1) : lastSegmentEncoded;
-             return nameWithoutTimestamp || lastSegmentEncoded;
+    // Handle Firebase Storage URLs more robustly
+    if (url.startsWith('https://firebasestorage.googleapis.com')) {
+        try {
+            const decodedUrl = decodeURIComponent(url);
+            const pathSegments = new URL(decodedUrl).pathname.split('/');
+            const lastSegmentWithQuery = pathSegments.pop(); // e.g., 'bookings%2F...%2F12345_filename.jpg?alt=media&token=...'
+            if (lastSegmentWithQuery) {
+                const fileNamePart = lastSegmentWithQuery.split('?')[0]; // Remove query parameters
+                // Remove the folder structure and timestamp prefix if present
+                const finalName = fileNamePart.substring(fileNamePart.lastIndexOf('/') + 1); // Get '12345_filename.jpg'
+                const nameWithoutTimestamp = finalName.includes('_') ? finalName.substring(finalName.indexOf('_') + 1) : finalName; // Get 'filename.jpg'
+                return nameWithoutTimestamp || finalName; // Fallback to full segment if split fails
+            }
+        } catch (e) { 
+            console.warn(`[getFileNameFromUrl] Error parsing Firebase URL: ${url}`, e);
+            // Fallback for URLs that might not be standard Firebase Storage URLs or have unusual characters
+            const simpleName = url.substring(url.lastIndexOf('/') + 1).split('?')[0];
+            return simpleName.length > 0 ? (simpleName.length > 40 ? simpleName.substring(0,37) + "..." : simpleName) : defaultText;
         }
-    } catch (e) { /* ignore */ }
+    }
+    // Fallback for other types of URLs (e.g., mock URLs)
+    if (url.startsWith('mock-file-url:')) return url.substring('mock-file-url:'.length);
+
+    // Generic fallback
     const simpleName = url.substring(url.lastIndexOf('/') + 1);
     return simpleName.length > 0 ? (simpleName.length > 40 ? simpleName.substring(0,37) + "..." : simpleName) : defaultText;
 };
 
 
 interface DetailItemProps {
-  icon?: React.ElementType; // Made icon optional
+  icon?: React.ElementType;
   label: string;
   value?: string | number | null | boolean;
   isCurrency?: boolean;
@@ -88,7 +107,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     return (
       <div className={cn("flex items-start space-x-3 py-1.5", className)}>
         {Icon && <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />}
-        <div className={cn(!Icon && "pl-8")}> {/* Add padding if no icon */}
+        <div className={cn(!Icon && "pl-8")}>
           <p className="text-sm text-muted-foreground">{label}</p>
           <div className="text-base font-medium text-foreground">{children}</div>
         </div>
@@ -100,7 +119,7 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     if (typeof value === 'boolean' && value === false) {
       // Allow 'false' boolean to be displayed
     } else {
-       return ( // Still render label for consistency, show N/A
+       return (
         <div className={cn("flex items-start space-x-3 py-1.5", className)}>
           {Icon && <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />}
            <div className={cn(!Icon && "pl-8")}>
@@ -118,21 +137,36 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     displayValue = formatCurrency(value);
   } else if (isDocumentUrl && typeof value === 'string') {
       const fileName = getFileNameFromUrl(value, "Ungültige URL");
-      let fileIcon = <FileIcon className="mr-2 h-4 w-4 flex-shrink-0" />;
+      let fileIconElement = <FileIcon className="mr-2 h-4 w-4 flex-shrink-0" />;
       let imagePreview: React.ReactNode = null;
 
-      if (value.startsWith('data:image') || (value.startsWith('https://firebasestorage.googleapis.com') && (/\.(jpeg|jpg|gif|png|webp)(\?alt=media|$)/i.test(value) || value.includes('image%2F') || value.includes('image%2f')))) {
-        fileIcon = <ImageIcon className="mr-2 h-4 w-4 flex-shrink-0" />;
+      // Check for Firebase Storage image URLs
+      const isFirebaseImage = value.startsWith('https://firebasestorage.googleapis.com') && 
+                              (/\.(jpeg|jpg|gif|png|webp)(\?alt=media|$)/i.test(value) || 
+                               value.includes('image%2F') || 
+                               value.includes('image%2f'));
+
+      // Check for Firebase Storage PDF URLs
+      const isFirebasePdf = value.startsWith('https://firebasestorage.googleapis.com') &&
+                            (/\.pdf(\?alt=media|$)/i.test(value) ||
+                             value.includes('application%2Fpdf') ||
+                             value.includes('application%2fpdf'));
+      
+      const isDataImage = value.startsWith('data:image');
+
+
+      if (isDataImage || isFirebaseImage) {
+        fileIconElement = <ImageIcon className="mr-2 h-4 w-4 flex-shrink-0" />;
         imagePreview = <NextImage src={value} alt={label || 'Hochgeladenes Bild'} width={150} height={80} className="rounded-md border object-contain my-1.5 shadow-sm" data-ai-hint={documentHint || "document image"}/>;
-      } else if (value.startsWith('mock-file-url:') || (value.startsWith('https://firebasestorage.googleapis.com') && (/\.pdf(\?alt=media|$)/i.test(value) || value.includes('application%2Fpdf') || value.includes('application%2fpdf')))) {
-        fileIcon = <FileText className="mr-2 h-4 w-4 flex-shrink-0" />;
+      } else if (isFirebasePdf || value.startsWith('mock-file-url:')) { // mock-file-url might represent a PDF
+        fileIconElement = <FileText className="mr-2 h-4 w-4 flex-shrink-0" />;
       }
       
       displayValue = (
         <div className="flex flex-col items-start mt-0.5">
           {imagePreview}
-          <Link href={value.startsWith('mock-file-url:') ? '#' : value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileName}`} className="text-primary hover:underline hover:text-primary/80 transition-colors text-sm font-medium flex items-center">
-            {fileIcon} {fileName}
+          <Link href={value.startsWith('mock-file-url:') || value.startsWith('data:image') ? '#' : value} target="_blank" rel="noopener noreferrer" title={`Datei ansehen: ${fileName}`} className="text-primary hover:underline hover:text-primary/80 transition-colors text-sm font-medium flex items-center">
+            {fileIconElement} {fileName}
           </Link>
         </div>
       );
@@ -142,10 +176,11 @@ const DetailItem: React.FC<DetailItemProps> = ({ icon: Icon, label, value, isCur
     displayValue = <Badge variant={badgeVariant || 'secondary'} className="text-xs capitalize">{value.toLowerCase().replace(/_/g, ' ')}</Badge>;
   }
 
+
   return (
     <div className={cn("flex items-start space-x-3 py-1.5", className)}>
       {Icon && <Icon className="h-5 w-5 text-muted-foreground mt-1 flex-shrink-0" />}
-      <div className={cn(!Icon && "pl-8")}>
+      <div className={cn(!Icon && "pl-8")}> {/* Ensure padding if no icon */}
         <p className="text-sm text-muted-foreground">{label}</p>
         <div className="text-base font-medium text-foreground">{displayValue}</div>
       </div>
@@ -296,7 +331,7 @@ export default async function BookingDetailsPage({ params }: { params: { id: str
                     <>
                         <Separator className="my-5" />
                         <h3 className="font-semibold text-lg flex items-center text-foreground"><Users2 className="mr-2.5 h-5 w-5 text-primary" /> Mitreisende</h3>
-                        {guestData.mitreisende.map((mitreisender: Mitreisender, index: number) => ( // Explicit types
+                        {guestData.mitreisende.map((mitreisender: Mitreisender, index: number) => (
                             <div key={mitreisender.id || index} className="pl-8 pt-3 border-t border-border/20 first:border-t-0 first:pt-0">
                                 <h4 className="font-medium text-md mb-1.5 text-foreground/90">Mitreisender {index + 1}: {mitreisender.vorname} {mitreisender.nachname}</h4>
                                 <DetailItem label="Ausweis Vorderseite" value={mitreisender.ausweisVorderseiteUrl} isDocumentUrl documentHint="companion identification front"/>
