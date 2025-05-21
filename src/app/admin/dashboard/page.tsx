@@ -6,14 +6,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getBookingsFromFirestore } from "@/lib/mock-db"; 
+import { getBookingsFromFirestore } from "@/lib/mock-db";
 
 async function fetchBookings(): Promise<Booking[]> {
-  console.log("[AdminDashboardPage] Fetching bookings from Firestore...");
-  // This function will now throw an error if Firestore is not initialized or if fetching fails
-  const bookings = await getBookingsFromFirestore(); 
-  console.log(`[AdminDashboardPage] Fetched ${bookings.length} bookings.`);
-  return bookings;
+  const operationName = "[AdminDashboardPage fetchBookings]";
+  console.log(`${operationName} Fetching bookings...`);
+  try {
+    // This function will now throw an error if Firestore is not initialized or if fetching fails
+    const bookings = await getBookingsFromFirestore();
+    console.log(`${operationName} Fetched ${bookings.length} bookings.`);
+    return bookings;
+  } catch (error) {
+    console.error(`${operationName} Error in fetchBookings:`, error);
+    // Re-throw the error to be caught by the page component
+    throw error;
+  }
 }
 
 async function getDashboardStats(bookings: Booking[]) {
@@ -28,7 +35,7 @@ async function getDashboardStats(bookings: Booking[]) {
     const checkOutDate = b.checkOutDate ? new Date(b.checkOutDate).setHours(0,0,0,0) : null;
     return checkOutDate === today && b.status === "Confirmed";
   }).length;
-  
+
   const newBookingsToday = bookings.filter(b => {
     const createdAtDate = b.createdAt ? new Date(b.createdAt).setHours(0,0,0,0) : null;
     return createdAtDate === today;
@@ -85,23 +92,23 @@ export default async function AdminDashboardPage() {
 
   try {
     console.log("[AdminDashboardPage] Attempting to fetch bookings and calculate stats...");
-    bookings = await fetchBookings(); // This will throw if Firestore is not initialized
+    bookings = await fetchBookings();
     stats = await getDashboardStats(bookings);
     console.log("[AdminDashboardPage] Successfully fetched bookings and calculated stats.");
   } catch (error: any) {
     console.error("[AdminDashboardPage] Critical error fetching data for dashboard:", error.message, error.stack?.substring(0,500));
     if (error.message.includes("FATAL: Firestore is not initialized")) {
-        fetchError = `Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden. 
-                      Ursache: ${error.message}. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID) 
-                      und dass die Firestore-Dienste (Firestore Database und Cloud Firestore API) in der Firebase/Google Cloud Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde. 
+        fetchError = `Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden.
+                      Ursache: ${error.message}. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID)
+                      und dass die Firestore-Dienste (Firestore Database und Cloud Firestore API) in der Firebase/Google Cloud Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde.
                       Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.`;
     } else if (error.message.includes("Missing or insufficient permissions")) {
-        fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore. 
-                      Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole. 
+        fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore.
+                      Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole.
                       Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message})`;
     } else if (error.message.includes("Query requires an index")) {
-        fetchError = `Fehler beim Laden der Buchungsdaten: Eine benötigte Index-Konfiguration für Firestore fehlt. 
-                      Bitte überprüfen Sie die Firebase Konsole (Firestore > Indizes). Firestore könnte dort vorschlagen, den Index zu erstellen. 
+        fetchError = `Fehler beim Laden der Buchungsdaten: Eine benötigte Index-Konfiguration für Firestore fehlt.
+                      Bitte überprüfen Sie die Firebase Konsole (Firestore > Indizes). Firestore könnte dort vorschlagen, den Index zu erstellen.
                       (Fehlermeldung: ${error.message})`;
     }
      else {
@@ -162,7 +169,7 @@ export default async function AdminDashboardPage() {
             />
           </div>
         )}
-        
+
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -182,14 +189,16 @@ export default async function AdminDashboardPage() {
             ) : bookings.length > 0 ? (
                 <BookingsDataTable data={bookings} />
             ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
-                    <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
-                    <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
-                    <div className="mt-6">
-                         <CreateBookingDialog />
+                 !fetchError && bookings.length === 0 ? ( // Only show "No bookings" if there was no fetch error
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
+                        <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
+                        <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
+                        <div className="mt-6">
+                             <CreateBookingDialog />
+                        </div>
                     </div>
-                </div>
+                 ) : null // If fetchError and no bookings, the error message above is already shown
             )}
           </CardContent>
         </Card>
@@ -197,3 +206,5 @@ export default async function AdminDashboardPage() {
     </TooltipProvider>
   );
 }
+
+    
