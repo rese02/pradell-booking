@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -27,8 +28,10 @@ body {
     --input: 210 20% 94%;
 
     /* Primary Color (derived from #89A68A) */
-    --primary: 121 20% 48%; /* Darker, slightly more saturated green */
+    --primary: 121 20% 48%; /* Darker, slightly more saturated green (Ursprüngliche Hauptfarbe) */
     --primary-foreground: 0 0% 100%; /* White text on primary */
+    --primary-darker: 121 25% 40%; /* Ein dunklerer Grünton für Verläufe */
+
 
     /* Secondary Color (derived from #89A68A) */
     --secondary: 121 15% 90%; /* Light green for secondary elements */
@@ -80,6 +83,8 @@ body {
     /* Primary Color - Dark Theme (adjust lightness for dark mode) */
     --primary: 121 25% 55%; 
     --primary-foreground: 0 0% 100%;
+    --primary-darker: 121 30% 45%; /* Dunklerer Grünton für Verläufe im Dark Mode */
+
 
     /* Secondary Color - Dark Theme */
     --secondary: 121 20% 30%; 
