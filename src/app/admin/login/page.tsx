@@ -2,14 +2,13 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn, LibraryBig } from "lucide-react"; // LibraryBig als Platzhalter-Icon
-import { Logo } from "@/components/shared/Logo"; // Using alias path
+import { Logo } from "../../../components/shared/Logo"; // Beibehaltung des relativen Pfads gemäß Fehler
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -34,8 +33,6 @@ export default function AdminLoginPage() {
   });
 
   async function onSubmit(values: LoginFormValues) {
-    // console.log("Login attempt:", values); // Für Debugging
-    // Simuliere Netzwerkverzögerung
     await new Promise(resolve => setTimeout(resolve, 700));
 
     if (values.email === "info@pradell.com" && values.password === "Pradell!") {
@@ -50,14 +47,12 @@ export default function AdminLoginPage() {
         title: "Login fehlgeschlagen",
         description: "Ungültige E-Mail-Adresse oder Passwort.",
       });
-      // Optional: Formularfehler setzen, um dem Benutzer direktes Feedback zu geben
       form.setError("root", { message: "Ungültige E-Mail-Adresse oder Passwort."});
     }
   }
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Linker Bereich: Login Formular */}
       <div className="w-full md:w-2/5 lg:w-1/3 flex flex-col justify-center items-center p-8 sm:p-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
@@ -116,14 +111,13 @@ export default function AdminLoginPage() {
         </div>
       </div>
 
-      {/* Rechter Bereich: Willkommenstext */}
       <div 
         className="hidden md:flex md:w-3/5 lg:w-2/3 flex-col justify-center items-center p-12 text-center text-primary-foreground"
         style={{ 
           background: 'linear-gradient(to bottom right, hsl(var(--primary)) 0%, hsl(var(--primary-darker, var(--primary))) 100%)' 
         }}
       >
-        <LibraryBig className="h-24 w-24 mb-8 opacity-70" data-ai-hint="building document" />
+        <LibraryBig className="h-24 w-24 mb-8 opacity-70" data-ai-hint="building document"/>
         <h2 className="text-4xl font-bold mb-4">Willkommen zurück!</h2>
         <p className="text-lg max-w-md opacity-90">
           Verwalten Sie Ihre Hotelbuchungen effizient und professionell. Behalten Sie den Überblick über Gästeformationen und Dokumente.
