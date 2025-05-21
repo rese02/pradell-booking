@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn, LibraryBig } from "lucide-react"; // LibraryBig als Platzhalter-Icon
-import { PradellLogo } from "@/components/shared/PradellLogo"; // PradellLogo wird verwendet
+import { Logo } from "../../../components/shared/Logo"; // Geändert von PradellLogo
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -61,7 +61,7 @@ export default function AdminLoginPage() {
       <div className="w-full md:w-2/5 lg:w-1/3 flex flex-col justify-center items-center p-8 sm:p-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <PradellLogo />
+            <Logo /> {/* Ersetzt PradellLogo durch Logo */}
           </div>
           
           <h1 className="text-2xl font-semibold text-center mb-2">Pradell Buchungssystem</h1>
