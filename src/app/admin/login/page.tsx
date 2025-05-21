@@ -8,7 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn, LibraryBig } from "lucide-react"; // LibraryBig als Platzhalter-Icon
-import { Logo } from "../../../components/shared/Logo"; // Beibehaltung des relativen Pfads gemäß Fehler
+import { Logo } from "../../../components/shared/Logo"; // Relative path
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";

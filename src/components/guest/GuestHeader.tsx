@@ -1,4 +1,4 @@
-import { Logo } from "@/components/shared/Logo"; // Using alias path
+import { Logo } from "@/components/shared/Logo"; // Alias-Pfad verwenden
 
 export function GuestHeader() {
   return (
