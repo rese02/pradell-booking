@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -12,7 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, UserCircle, Menu } from "lucide-react";
-import { Logo } from "@/components/shared/Logo"; // Using alias path
+// Logo import might become unused if this was the only usage, but can remain for now.
+// import { Logo } from "@/components/shared/Logo"; 
 import { useSidebar } from "@/components/ui/sidebar"; 
 
 export function AdminHeader() {
@@ -31,9 +33,7 @@ export function AdminHeader() {
         {/* Optional: Breadcrumbs or Search Bar can go here, or it acts as a spacer */}
       </div>
       
-      <div className="mr-4"> 
-        <Logo />
-      </div>
+      {/* Logo removed from here */}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
