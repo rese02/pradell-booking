@@ -22,32 +22,35 @@ async function getBookingByToken(token: string): Promise<Booking | null> {
     }
   } catch (error: any) {
     console.error(`${operationName} CRITICAL ERROR fetching booking for token "${token}":`, error.message, error.stack?.substring(0,500));
-    // Re-throw a more specific error or a generic one to be caught by the page
-    if (error.message.includes("Firestore Permission Denied")) {
-        throw new Error(`Zugriff auf Buchungsdetails verweigert. Bitte überprüfen Sie die Firestore-Regeln. (Token: ${token})`);
-    } else if (error.message.includes("Firestore Index Missing")) {
-        throw new Error(`Ein benötigter Datenbank-Index fehlt. Bitte kontaktieren Sie den Support. (Token: ${token})`);
-    } else if (error.message.includes("Firestore is not initialized")) {
-         throw new Error(`Fehler bei der Datenbankverbindung. Bitte versuchen Sie es später erneut. (Token: ${token})`);
+    if (String(error.message).includes("Firestore is not initialized")) {
+        throw new Error(`Datenbankverbindungsproblem. Bitte versuchen Sie es später erneut oder kontaktieren Sie das Hotel. (Ref: FNI-${token.substring(0,4)})`);
+    } else if (String(error.message).toLowerCase().includes("permission denied")) {
+        throw new Error(`Zugriff auf Buchungsdetails verweigert. Dies ist unerwartet. Bitte kontaktieren Sie das Hotel. (Ref: FPD-${token.substring(0,4)})`);
+    } else if (String(error.message).toLowerCase().includes("index missing")) {
+        throw new Error(`Ein benötigter Datenbank-Index fehlt. Dies ist ein technisches Problem. Bitte kontaktieren Sie das Hotel. (Ref: FIM-${token.substring(0,4)})`);
     }
-    throw new Error(`Fehler beim Abrufen der Buchungsdetails für Token ${token}: ${error.message}`);
+    throw new Error(`Fehler beim Abrufen der Buchungsdetails für Token ${token}. Details: ${error.message}`);
   }
 }
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
+  const tokenFromParams = params.token; // Assign to a local variable early
   const operationName = "[Server GuestBookingPage]";
-  console.log(`${operationName} Rendering page for token: "${params.token}" at ${new Date().toISOString()}`);
+  console.log(`${operationName} Rendering page for token: "${tokenFromParams}" at ${new Date().toISOString()}`);
+  
   let booking: Booking | null = null;
   let fetchError: string | null = null;
 
   try {
-    booking = await getBookingByToken(params.token);
+    booking = await getBookingByToken(tokenFromParams);
+    console.log(`${operationName} [Token: ${tokenFromParams}] getBookingByToken call completed. Booking object is ${booking ? 'NOT null' : 'null'}.`);
   } catch (error: any) {
-    console.error(`${operationName} Error in getBookingByToken for token "${params.token}":`, error.message);
-    fetchError = error.message || `Ein unbekannter Fehler ist beim Laden der Buchungsdetails aufgetreten. Bitte versuchen Sie es später erneut oder kontaktieren Sie das Hotel.`;
+    console.error(`${operationName} [Token: ${tokenFromParams}] Error in getBookingByToken:`, error.message, error.stack?.substring(0,300));
+    fetchError = error.message || `Ein unbekannter Fehler ist beim Laden der Buchungsdetails aufgetreten. Bitte versuchen Sie es später erneut oder kontaktieren Sie das Hotel. (Ref: GBE-${tokenFromParams.substring(0,4)})`;
   }
 
   if (fetchError) {
+    console.log(`${operationName} [Token: ${tokenFromParams}] Rendering fetchError card. Error: ${fetchError}`);
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -56,15 +59,14 @@ export default async function GuestBookingPage({ params }: { params: { token: st
         </CardHeader>
         <CardContent className="text-center">
             <CardDescription>{fetchError}</CardDescription>
-            <p className="text-xs text-muted-foreground mt-2">Token: {params.token}</p>
+            <p className="text-xs text-muted-foreground mt-2">Token: {tokenFromParams}</p>
         </CardContent>
       </Card>
     );
   }
 
   if (!booking) {
-    console.error(`${operationName} Booking not found for token "${params.token}" (getBookingByToken returned null or error was caught and processed). Calling notFound().`);
-    // Display a more user-friendly "not found" or "invalid link" page instead of a generic 404
+    console.error(`${operationName} [Token: ${tokenFromParams}] Booking is null after getBookingByToken. Rendering "not found" card.`);
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -75,17 +77,16 @@ export default async function GuestBookingPage({ params }: { params: { token: st
            <CardDescription>
             Dieser Buchungslink ist ungültig oder die Buchung existiert nicht (mehr). Bitte überprüfen Sie den Link oder kontaktieren Sie das Hotel.
            </CardDescription>
-           <p className="text-xs text-muted-foreground mt-2">Token: {params.token}</p>
+           <p className="text-xs text-muted-foreground mt-2">Token: {tokenFromParams}</p>
         </CardContent>
       </Card>
     );
-    // notFound(); // Or call notFound() for a standard 404 page
   }
 
-  console.log(`${operationName} Booking data retrieved for token "${params.token}": Status: ${booking.status}, Guest: ${booking.guestFirstName}`);
+  console.log(`${operationName} [Token: ${tokenFromParams}] Booking data retrieved. Status: ${booking.status}, Guest: ${booking.guestFirstName}, SubmittedAt: ${booking.guestSubmittedData?.submittedAt}, LastCompletedStep: ${booking.guestSubmittedData?.lastCompletedStep}`);
 
   if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
-     console.log(`${operationName} Booking for token "${params.token}" is Confirmed and data submitted. Displaying confirmation.`);
+     console.log(`${operationName} [Token: ${tokenFromParams}] Booking is Confirmed and data submitted. Displaying confirmation.`);
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -103,7 +104,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (booking.status === "Cancelled") {
-    console.log(`${operationName} Booking for token "${params.token}" is Cancelled. Displaying cancellation message.`);
+    console.log(`${operationName} [Token: ${tokenFromParams}] Booking is Cancelled. Displaying cancellation message.`);
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -119,14 +120,18 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
   
-  if (booking.status === "Pending Guest Information" || (booking.status === "Confirmed" && (!booking.guestSubmittedData || !booking.guestSubmittedData.submittedAt))) {
-    console.log(`${operationName} Booking for token "${params.token}" is "${booking.status}". Rendering GuestBookingFormStepper.`);
+  // This is the primary condition to show the form
+  const shouldShowForm = booking.status === "Pending Guest Information" || 
+                        (booking.status === "Confirmed" && (!booking.guestSubmittedData || !booking.guestSubmittedData.submittedAt));
+
+  if (shouldShowForm) {
+    console.log(`${operationName} [Token: ${tokenFromParams}] Booking status is "${booking.status}" and conditions met. Rendering GuestBookingFormStepper.`);
     return (
-      <GuestBookingFormStepper bookingToken={params.token} initialBookingDetails={booking} />
+      <GuestBookingFormStepper bookingToken={tokenFromParams} initialBookingDetails={booking} />
     );
   }
 
-  console.warn(`${operationName} Booking found for token "${params.token}", but status is "${booking.status}", which is not handled by specific UI. Displaying generic status message.`);
+  console.warn(`${operationName} [Token: ${tokenFromParams}] Booking found, but status is "${booking.status}" which is not handled by specific UI. Displaying generic status message.`);
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
