@@ -4,47 +4,49 @@ import { CreateBookingDialog } from "@/components/admin/CreateBookingDialog";
 import type { Booking } from "@/lib/definitions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle } from "lucide-react";
+import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon as NewBookingIcon, Info, ListFilter, CalendarCheck2, AlertTriangle, Users, Briefcase, BarChart3 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getBookingsFromFirestore } from "@/lib/mock-db";
+import { getBookingsFromFirestore } from "@/lib/mock-db"; // Now points to Firestore operations
+import { Separator } from "@/components/ui/separator";
 
 async function fetchBookings(): Promise<Booking[]> {
   const operationName = "[AdminDashboardPage fetchBookings]";
   console.log(`${operationName} Fetching bookings...`);
   try {
-    // This function will now throw an error if Firestore is not initialized or if fetching fails
     const bookings = await getBookingsFromFirestore();
     console.log(`${operationName} Fetched ${bookings.length} bookings.`);
     return bookings;
   } catch (error) {
     console.error(`${operationName} Error in fetchBookings:`, error);
-    // Re-throw the error to be caught by the page component
     throw error;
   }
 }
 
 async function getDashboardStats(bookings: Booking[]) {
-  const today = new Date().setHours(0,0,0,0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const arrivalsToday = bookings.filter(b => {
-    const checkInDate = b.checkInDate ? new Date(b.checkInDate).setHours(0,0,0,0) : null;
-    return checkInDate === today && (b.status === "Confirmed" || b.status === "Pending Guest Information");
+  const upcomingCheckIns = bookings.filter(b => {
+    const checkInDate = b.checkInDate ? new Date(b.checkInDate) : null;
+    return checkInDate && checkInDate >= today && (b.status === "Confirmed" || b.status === "Pending Guest Information");
   }).length;
 
-  const departuresToday = bookings.filter(b => {
-    const checkOutDate = b.checkOutDate ? new Date(b.checkOutDate).setHours(0,0,0,0) : null;
-    return checkOutDate === today && b.status === "Confirmed";
+  const guestsInHouse = bookings.filter(b => {
+    const checkInDate = b.checkInDate ? new Date(b.checkInDate) : null;
+    const checkOutDate = b.checkOutDate ? new Date(b.checkOutDate) : null;
+    return checkInDate && checkOutDate && checkInDate <= today && checkOutDate > today && b.status === "Confirmed";
   }).length;
 
-  const newBookingsToday = bookings.filter(b => {
-    const createdAtDate = b.createdAt ? new Date(b.createdAt).setHours(0,0,0,0) : null;
-    return createdAtDate === today;
-  }).length;
+  const totalConfirmedBookings = bookings.filter(b => b.status === "Confirmed").length;
+  
+  const totalPendingBookings = bookings.filter(b => b.status === "Pending Guest Information").length;
+
 
   return {
-    arrivalsToday,
-    departuresToday,
-    newBookingsToday,
+    upcomingCheckIns,
+    guestsInHouse,
+    totalConfirmedBookings,
+    totalPendingBookings,
   };
 }
 
@@ -53,33 +55,38 @@ interface StatCardProps {
   value: number | string;
   icon: React.ElementType;
   description: string;
-  tooltipText: string;
+  tooltipText?: string;
+  className?: string;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, description, tooltipText }) => {
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, description, tooltipText, className }) => {
   return (
-    <Card className="shadow-sm">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-6 w-6 opacity-50 hover:opacity-100">
-                <Info className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{tooltipText}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+    <Card className={cn("card-modern p-1", className)}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        {tooltipText && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6 opacity-60 hover:opacity-100">
+                  <Info className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{tooltipText}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 pb-4">
         <div className="flex items-center space-x-3">
-            <Icon className="h-6 w-6 text-primary" />
-            <div className="text-2xl font-bold">{value}</div>
+            <div className="p-3 rounded-lg bg-primary/10">
+                <Icon className="h-6 w-6 text-primary" />
+            </div>
+            <div className="text-3xl font-bold text-foreground">{value}</div>
         </div>
-        <p className="text-xs text-muted-foreground pt-1">{description}</p>
+        <p className="text-xs text-muted-foreground pt-2">{description}</p>
       </CardContent>
     </Card>
   );
@@ -87,7 +94,7 @@ const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, descripti
 
 export default async function AdminDashboardPage() {
   let bookings: Booking[] = [];
-  let stats = { arrivalsToday: 0, departuresToday: 0, newBookingsToday: 0 };
+  let stats = { upcomingCheckIns: 0, guestsInHouse: 0, totalConfirmedBookings: 0, totalPendingBookings: 0 };
   let fetchError: string | null = null;
 
   try {
@@ -102,11 +109,11 @@ export default async function AdminDashboardPage() {
                       Ursache: ${error.message}. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID)
                       und dass die Firestore-Dienste (Firestore Database und Cloud Firestore API) in der Firebase/Google Cloud Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde.
                       Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.`;
-    } else if (error.message.includes("Missing or insufficient permissions")) {
+    } else if (error.message.toLowerCase().includes("missing or insufficient permissions")) {
         fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore.
                       Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole.
                       Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message})`;
-    } else if (error.message.includes("Query requires an index")) {
+    } else if (error.message.toLowerCase().includes("query requires an index")) {
         fetchError = `Fehler beim Laden der Buchungsdaten: Eine benötigte Index-Konfiguration für Firestore fehlt.
                       Bitte überprüfen Sie die Firebase Konsole (Firestore > Indizes). Firestore könnte dort vorschlagen, den Index zu erstellen.
                       (Fehlermeldung: ${error.message})`;
@@ -118,19 +125,19 @@ export default async function AdminDashboardPage() {
 
   return (
     <TooltipProvider>
-      <div className="container mx-auto py-2">
-        <div className="flex items-center justify-between mb-6">
+      <div className="container mx-auto py-4 px-2 sm:px-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Admin Dashboard</h1>
-            <p className="text-muted-foreground">
-              Übersicht und Verwaltung aller Buchungen.
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">Admin Dashboard</h1>
+            <p className="text-muted-foreground mt-1">
+              Übersicht und Verwaltung Ihrer Hotelbuchungen.
             </p>
           </div>
           <CreateBookingDialog />
         </div>
 
         {fetchError && (
-          <Card className="mb-6 bg-destructive/10 border-destructive">
+          <Card className="mb-8 bg-destructive/10 border-destructive card-modern">
             <CardHeader>
               <CardTitle className="text-destructive flex items-center">
                 <AlertTriangle className="mr-2 h-5 w-5" />
@@ -145,52 +152,67 @@ export default async function AdminDashboardPage() {
         )}
 
         {!fetchError && (
-          <div className="grid gap-4 md:grid-cols-3 mb-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
             <StatCard
-              title="Ankünfte heute"
-              value={stats.arrivalsToday}
+              title="Anstehende Check-Ins"
+              value={stats.upcomingCheckIns}
               icon={ArrivalIcon}
-              description="Gäste die heute anreisen"
-              tooltipText="Anzahl der geplanten Ankünfte für den heutigen Tag."
+              description="Geplante Ankünfte"
+              tooltipText="Anzahl der Buchungen mit heutigem oder zukünftigem Check-In-Datum (Status: Confirmed oder Pending Guest Information)."
+              className="bg-card"
             />
             <StatCard
-              title="Abreisen heute"
-              value={stats.departuresToday}
-              icon={DepartureIcon}
-              description="Gäste die heute auschecken"
-              tooltipText="Anzahl der geplanten Abreisen für den heutigen Tag."
+              title="Gäste im Haus"
+              value={stats.guestsInHouse}
+              icon={Users}
+              description="Aktuell eingecheckte Gäste"
+              tooltipText="Anzahl der Buchungen, deren Aufenthalt heute stattfindet (Status: Confirmed)."
+              className="bg-card"
             />
             <StatCard
-              title="Neue Buchungen heute"
-              value={`${stats.newBookingsToday > 0 ? '+' : ''}${stats.newBookingsToday}`}
-              icon={NewBookingIcon}
-              description="Heute erstellte Buchungen"
-              tooltipText="Anzahl der Buchungen, die heute neu erstellt wurden."
+              title="Bestätigte Buchungen"
+              value={stats.totalConfirmedBookings}
+              icon={CalendarCheck2}
+              description="Insgesamt bestätigt"
+              tooltipText="Gesamtzahl aller Buchungen mit dem Status 'Confirmed'."
+              className="bg-card"
+            />
+             <StatCard
+              title="Ausstehende Infos"
+              value={stats.totalPendingBookings}
+              icon={AlertTriangle} // Or other suitable icon
+              description="Warten auf Gastdaten"
+              tooltipText="Gesamtzahl aller Buchungen mit dem Status 'Pending Guest Information'."
+              className="bg-yellow-500/10 border-yellow-500/50" // Example of distinct styling
             />
           </div>
         )}
 
-        <Card className="shadow-lg">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <Card className="card-modern">
+          <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-5">
             <div>
-              <CardTitle>Aktuelle Buchungen</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-xl font-semibold">Buchungsübersicht</CardTitle>
+              <CardDescription className="mt-1">
                 Details ansehen und Buchungen verwalten.
               </CardDescription>
             </div>
+            {/* <Button variant="outline" size="sm">
+                <ListFilter className="mr-2 h-4 w-4" /> Buchungen filtern
+            </Button> */}
           </CardHeader>
-          <CardContent>
+          <Separator />
+          <CardContent className="p-0 sm:p-2 md:p-4">
             {fetchError && !bookings.length ? (
-                 <div className="flex flex-col items-center justify-center py-12 text-center">
+                 <div className="flex flex-col items-center justify-center py-16 text-center">
                     <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                     <h3 className="text-xl font-semibold text-destructive">Daten konnten nicht geladen werden</h3>
-                    <p className="text-muted-foreground">Überprüfen Sie die Fehlermeldung oben und die Server-Logs für Details.</p>
+                    <p className="text-muted-foreground max-w-md">{fetchError}</p>
                 </div>
             ) : bookings.length > 0 ? (
                 <BookingsDataTable data={bookings} />
             ) : (
-                 !fetchError && bookings.length === 0 ? ( // Only show "No bookings" if there was no fetch error
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                 !fetchError && bookings.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
                         <CalendarCheck2 className="h-16 w-16 text-muted-foreground mb-4" />
                         <h3 className="text-xl font-semibold">Keine Buchungen gefunden</h3>
                         <p className="text-muted-foreground">Momentan sind keine Buchungen vorhanden. Erstellen Sie eine neue Buchung.</p>
@@ -198,7 +220,7 @@ export default async function AdminDashboardPage() {
                              <CreateBookingDialog />
                         </div>
                     </div>
-                 ) : null // If fetchError and no bookings, the error message above is already shown
+                 ) : null 
             )}
           </CardContent>
         </Card>
@@ -206,5 +228,4 @@ export default async function AdminDashboardPage() {
     </TooltipProvider>
   );
 }
-
     
