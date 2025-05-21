@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn, LibraryBig } from "lucide-react"; // LibraryBig als Platzhalter-Icon
-import { Logo } from "../../../components/shared/Logo"; // Using relative path
+import { Logo } from "@/components/shared/Logo"; // Using alias path
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
