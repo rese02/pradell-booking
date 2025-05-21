@@ -1,4 +1,4 @@
-
+// src/components/shared/Logo.tsx
 import { cn } from "@/lib/utils";
 import Image from "next/image";
 
@@ -14,8 +14,9 @@ export function Logo({ className }: LogoProps) {
         alt="Gastfreund Pro Logo"
         width={150} 
         height={30} 
-        priority 
-        className="h-auto" 
+        priority // Ensures the logo loads quickly, good for LCP
+        className="h-auto" // Adjust height automatically based on width and aspect ratio
+        data-ai-hint="logo company"
       />
     </div>
   );

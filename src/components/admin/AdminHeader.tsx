@@ -13,9 +13,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, Settings, UserCircle, Menu } from "lucide-react";
-// Logo import might become unused if this was the only usage, but can remain for now.
-// import { Logo } from "@/components/shared/Logo"; 
 import { useSidebar } from "@/components/ui/sidebar"; 
+// Logo import is no longer needed here if it's not used.
+// import { Logo } from "@/components/shared/Logo";
 
 export function AdminHeader() {
   const { toggleSidebar, isMobile } = useSidebar(); 
@@ -30,10 +30,11 @@ export function AdminHeader() {
       )}
       
       <div className="flex-1">
-        {/* Optional: Breadcrumbs or Search Bar can go here, or it acts as a spacer */}
+        {/* This div acts as a spacer, pushing the avatar menu to the right */}
       </div>
       
-      {/* Logo removed from here */}
+      {/* Logo was removed from here to be placed on the right */}
+      {/* <Logo className="h-8" /> Logo is not displayed on the right in the current design based on image */}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

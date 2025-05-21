@@ -9,7 +9,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { LogIn, LibraryBig } from "lucide-react"; // LibraryBig als Platzhalter-Icon
-import { Logo } from "../../../components/shared/Logo"; // Geändert von PradellLogo
+import { Logo } from "../../../components/shared/Logo"; // Using relative path
 import { useRouter } from "next/navigation"; 
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -61,7 +61,7 @@ export default function AdminLoginPage() {
       <div className="w-full md:w-2/5 lg:w-1/3 flex flex-col justify-center items-center p-8 sm:p-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <Logo /> {/* Ersetzt PradellLogo durch Logo */}
+            <Logo /> 
           </div>
           
           <h1 className="text-2xl font-semibold text-center mb-2">Pradell Buchungssystem</h1>
@@ -120,7 +120,7 @@ export default function AdminLoginPage() {
       <div 
         className="hidden md:flex md:w-3/5 lg:w-2/3 flex-col justify-center items-center p-12 text-center text-primary-foreground"
         style={{ 
-          background: 'linear-gradient(to bottom right, hsl(var(--primary)) 0%, hsl(var(--primary-darker, 121 25% 40%)) 100%)' 
+          background: 'linear-gradient(to bottom right, hsl(var(--primary)) 0%, hsl(var(--primary-darker, var(--primary))) 100%)' 
         }}
       >
         <LibraryBig className="h-24 w-24 mb-8 opacity-70" data-ai-hint="building document" />
