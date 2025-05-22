@@ -1,12 +1,15 @@
 
+"use client"; // Keep this if using client-side hooks like useState, useEffect for this page directly, but main data fetching is server-side.
+              // For a pure Server Component page displaying data, it would not be needed.
+              // However, if GuestBookingFormStepper is a client component, this page might be better as a client component wrapper.
+              // Given GuestBookingFormStepper uses useActionState, this page effectively acts as a Server Component that renders a Client Component.
+
 import { GuestBookingFormStepper } from "@/components/guest/GuestBookingFormStepper";
 import type { Booking } from "@/lib/definitions";
 import { AlertTriangle, CheckCircle, ServerCrash } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { findBookingByTokenFromFirestore } from "@/lib/mock-db";
+import { findBookingByTokenFromFirestore } from "@/lib/mock-db"; // Firestore operations
 import { notFound } from "next/navigation";
-
-console.log(`[Module /buchung/[token]/page.tsx] Module evaluated at ${new Date().toISOString()}`);
 
 async function getBookingByToken(token: string): Promise<Booking | null> {
   const operationName = "[Server getBookingByToken]";
@@ -22,11 +25,12 @@ async function getBookingByToken(token: string): Promise<Booking | null> {
     }
   } catch (error: any) {
     console.error(`${operationName} CRITICAL ERROR fetching booking for token "${token}":`, error.message, error.stack?.substring(0,500));
+    // Rethrow specific error messages to be caught by the page component
     if (String(error.message).includes("Firestore is not initialized")) {
         throw new Error(`Datenbankverbindungsproblem. Bitte versuchen Sie es später erneut oder kontaktieren Sie das Hotel. (Ref: FNI-${token.substring(0,4)})`);
-    } else if (String(error.message).toLowerCase().includes("permission denied")) {
+    } else if (String(error.message).toLowerCase().includes("permission denied") || String(error.message).toLowerCase().includes("insufficient permissions")) {
         throw new Error(`Zugriff auf Buchungsdetails verweigert. Dies ist unerwartet. Bitte kontaktieren Sie das Hotel. (Ref: FPD-${token.substring(0,4)})`);
-    } else if (String(error.message).toLowerCase().includes("index missing")) {
+    } else if (String(error.message).toLowerCase().includes("index missing") || String(error.message).toLowerCase().includes("query requires an index")) {
         throw new Error(`Ein benötigter Datenbank-Index fehlt. Dies ist ein technisches Problem. Bitte kontaktieren Sie das Hotel. (Ref: FIM-${token.substring(0,4)})`);
     }
     throw new Error(`Fehler beim Abrufen der Buchungsdetails für Token ${token}. Details: ${error.message}`);
@@ -34,7 +38,7 @@ async function getBookingByToken(token: string): Promise<Booking | null> {
 }
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
-  const tokenFromParams = params.token; // Assign to a local variable early
+  const tokenFromParams = params.token; 
   const operationName = "[Server GuestBookingPage]";
   console.log(`${operationName} Rendering page for token: "${tokenFromParams}" at ${new Date().toISOString()}`);
   
@@ -43,14 +47,14 @@ export default async function GuestBookingPage({ params }: { params: { token: st
 
   try {
     booking = await getBookingByToken(tokenFromParams);
-    console.log(`${operationName} [Token: ${tokenFromParams}] getBookingByToken call completed. Booking object is ${booking ? 'NOT null' : 'null'}.`);
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] getBookingByToken call completed. Booking object is ${booking ? 'NOT null' : 'null'}.`, { status: booking?.status });
   } catch (error: any) {
-    console.error(`${operationName} [Token: ${tokenFromParams}] Error in getBookingByToken:`, error.message, error.stack?.substring(0,300));
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Error in getBookingByToken:`, { message: error.message, stack: error.stack?.substring(0,300) }, 'error');
     fetchError = error.message || `Ein unbekannter Fehler ist beim Laden der Buchungsdetails aufgetreten. Bitte versuchen Sie es später erneut oder kontaktieren Sie das Hotel. (Ref: GBE-${tokenFromParams.substring(0,4)})`;
   }
 
   if (fetchError) {
-    console.log(`${operationName} [Token: ${tokenFromParams}] Rendering fetchError card. Error: ${fetchError}`);
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Rendering fetchError card. Error: ${fetchError}`, {}, "warn");
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -66,7 +70,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (!booking) {
-    console.error(`${operationName} [Token: ${tokenFromParams}] Booking is null after getBookingByToken. Rendering "not found" card.`);
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking is null after getBookingByToken. Rendering "not found" card.`, {}, 'error');
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -83,10 +87,10 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
-  console.log(`${operationName} [Token: ${tokenFromParams}] Booking data retrieved. Status: ${booking.status}, Guest: ${booking.guestFirstName}, SubmittedAt: ${booking.guestSubmittedData?.submittedAt}, LastCompletedStep: ${booking.guestSubmittedData?.lastCompletedStep}`);
+  logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking data retrieved.`, { status: booking.status, guestFirstName: booking.guestFirstName, submittedAt: booking.guestSubmittedData?.submittedAt, lastCompletedStep: booking.guestSubmittedData?.lastCompletedStep });
 
-  if (booking.status === "Confirmed" && booking.guestSubmittedData && booking.guestSubmittedData.submittedAt) {
-     console.log(`${operationName} [Token: ${tokenFromParams}] Booking is Confirmed and data submitted. Displaying confirmation.`);
+  if (booking.status === "Confirmed" && booking.guestSubmittedData?.submittedAt) {
+     logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking is Confirmed and data submitted. Displaying confirmation.`, {});
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -104,7 +108,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (booking.status === "Cancelled") {
-    console.log(`${operationName} [Token: ${tokenFromParams}] Booking is Cancelled. Displaying cancellation message.`);
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking is Cancelled. Displaying cancellation message.`, {});
     return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -120,18 +124,24 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
   
-  // This is the primary condition to show the form
-  const shouldShowForm = booking.status === "Pending Guest Information" || 
-                        (booking.status === "Confirmed" && (!booking.guestSubmittedData || !booking.guestSubmittedData.submittedAt));
+  // Simplified condition: show form if status is "Pending Guest Information" AND data not yet submitted.
+  const shouldShowForm = booking.status === "Pending Guest Information" && !booking.guestSubmittedData?.submittedAt;
+  
+  logSafePage(`${operationName} [Token: ${tokenFromParams}] Evaluation for showing form:`, { 
+    status: booking.status, 
+    submittedAt: booking.guestSubmittedData?.submittedAt,
+    shouldShowForm 
+  });
 
   if (shouldShowForm) {
-    console.log(`${operationName} [Token: ${tokenFromParams}] Booking status is "${booking.status}" and conditions met. Rendering GuestBookingFormStepper.`);
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Rendering GuestBookingFormStepper.`, {});
     return (
       <GuestBookingFormStepper bookingToken={tokenFromParams} initialBookingDetails={booking} />
     );
   }
 
-  console.warn(`${operationName} [Token: ${tokenFromParams}] Booking found, but status is "${booking.status}" which is not handled by specific UI. Displaying generic status message.`);
+  // Fallback for other statuses or unexpected conditions
+  logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking found, but status is "${booking.status}" which is not handled by specific UI or form should not be shown. Displaying generic status message.`, {}, 'warn');
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -140,10 +150,27 @@ export default async function GuestBookingPage({ params }: { params: { token: st
         </CardHeader>
         <CardContent className="text-center">
            <CardDescription>
-            Der aktuelle Status Ihrer Buchung: {booking.status}.
+            Der aktuelle Status Ihrer Buchung ist: {booking.status}.
+            Das Gästedatenformular ist für diesen Status nicht verfügbar oder bereits abgeschlossen.
             Bitte kontaktieren Sie das Hotel für weitere Informationen.
            </CardDescription>
         </CardContent>
       </Card>
   );
+}
+
+// Helper for consistent logging on this page
+function logSafePage(context: string, data: any, level: 'info' | 'warn' | 'error' = 'info') {
+    const pageName = "[GuestBookingPage]";
+    let simplifiedData;
+    try {
+        simplifiedData = JSON.stringify(data, null, 2).substring(0, 500); // Limit log size
+    } catch (e) {
+        simplifiedData = "[Log data could not be stringified]";
+    }
+    const logMessage = `${pageName} [${new Date().toISOString()}] ${context} ${simplifiedData}`;
+
+    if (level === 'error') console.error(logMessage);
+    else if (level === 'warn') console.warn(logMessage);
+    else console.log(logMessage);
 }

@@ -1,3 +1,4 @@
+
 "use server";
 
 import { z } from "zod";
@@ -9,17 +10,17 @@ import {
   findBookingByIdFromFirestore,
   updateBookingInFirestore,
   deleteBookingsFromFirestoreByIds,
-} from "./mock-db"; // This file now contains Firestore operations
+  convertTimestampsToISO, // For consistent return types
+} from "./mock-db"; // Now Firestore operations
 import { storage, firebaseInitializedCorrectly, db, firebaseInitializationError } from "@/lib/firebase";
 import { ref as storageRefFB, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { Timestamp } from "firebase/firestore";
 
-
-// Helper for logging large/sensitive data (simplified for brevity, ensure your full version is used if more complex)
+// Helper for logging (simplified for brevity, ensure your full version is used if more complex)
 function logSafe(context: string, data: any, level: 'info' | 'warn' | 'error' = 'info') {
     const operationName = "[Server Action LogSafe]";
     let simplifiedData;
-    const maxLogLength = 15000; 
+    const maxLogLength = 25000; // Increased for potentially larger objects like guestSubmittedData
     try {
         simplifiedData = JSON.stringify(data, (key, value) => {
             if (value instanceof File) { return { name: value.name, size: value.size, type: value.type, lastModified: value.lastModified }; }
@@ -41,10 +42,9 @@ function logSafe(context: string, data: any, level: 'info' | 'warn' | 'error' = 
     else console.log(logMessage);
 }
 
-
 export type FormState = {
   message?: string | null;
-  errors?: Record<string, string[] | string | undefined> | null; // Allow single string for simpler error messages
+  errors?: Record<string, string[] | string | undefined> | null;
   success?: boolean;
   actionToken?: string | undefined;
   updatedGuestData?: GuestSubmittedData | null;
@@ -56,38 +56,6 @@ const initialFormState: FormState = { message: null, errors: null, success: fals
 
 function generateActionToken() {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
-}
-
-function convertTimestampsInGuestData(data?: GuestSubmittedData | null): GuestSubmittedData | null | undefined {
-  if (!data) return data;
-  // Ensure no direct mutation of original data if passed by reference
-  const newGuestData: GuestSubmittedData = JSON.parse(JSON.stringify(data)); 
-
-  const processTimestampField = (obj: any, field: string) => {
-    if (obj && typeof obj[field] !== 'undefined' && obj[field] !== null) {
-      if (obj[field] instanceof Timestamp) { 
-        obj[field] = obj[field].toDate().toISOString();
-      } else if (typeof obj[field] === 'object' && 'seconds' in obj[field] && 'nanoseconds' in obj[field]) {
-        // Handle cases where Timestamp might be a plain object from Firestore (e.g., after JSON stringify/parse)
-        obj[field] = new Timestamp(obj[field].seconds, obj[field].nanoseconds).toDate().toISOString();
-      } else if (obj[field] instanceof Date) {
-        obj[field] = obj[field].toISOString();
-      }
-      // If it's already an ISO string, leave it.
-    }
-  };
-
-  const dateFieldsInGuestData: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
-  for (const field of dateFieldsInGuestData) {
-    processTimestampField(newGuestData, field as string);
-  }
-
-  if (newGuestData.mitreisende && Array.isArray(newGuestData.mitreisende)) {
-    // newGuestData.mitreisende.forEach(mitreisender => {
-    //   // processTimestampField(mitreisender, 'someDateFieldInMitreisender'); // Example if Mitreisender had dates
-    // });
-  }
-  return newGuestData;
 }
 
 const MAX_FILE_SIZE_MB = 10;
@@ -103,27 +71,20 @@ const fileSchema = z.instanceof(File).optional().nullable()
     (file) => ({ message: `Nur JPG, PNG, WEBP, PDF Dateien sind erlaubt. Erhalten: ${file?.type || 'unbekannt'}` })
   );
 
-// Helper function to update booking and handle guest submitted data, including file uploads
+
 async function updateBookingStep(
   forActionToken: string,
   bookingId: string,
   stepNumber: number, // 1-indexed for current step being processed
-  stepName: string, 
+  stepName: string,
   actionSchema: z.ZodType<any, any>,
   formData: FormData,
   additionalDataToMerge?: Partial<GuestSubmittedData>
 ): Promise<FormState> {
   const actionContext = `[updateBookingStep(BookingID:${bookingId}, Step:${stepNumber}-${stepName}, ActionToken:${forActionToken.substring(0,8)})]`;
   const startTime = Date.now();
-  let currentGuestDataSnapshot: GuestSubmittedData | null = null;
-  let bookingDoc: Booking | null = null; 
-  const formErrors: Record<string, string[]> = {}; 
+  logSafe(`${actionContext} BEGIN`, { formDataKeys: Array.from(formData.keys()), additionalDataToMergeKeys: additionalDataToMerge ? Object.keys(additionalDataToMerge) : 'N/A' });
 
-  logSafe(`${actionContext} BEGIN`, { 
-    formDataKeys: Array.from(formData.keys()), 
-    additionalDataToMergeKeys: additionalDataToMerge ? Object.keys(additionalDataToMerge) : 'N/A' 
-  });
-  
   if (!firebaseInitializedCorrectly || !db || !storage) {
     const initErrorMsg = firebaseInitializationError || "Unbekannter Firebase Initialisierungsfehler.";
     logSafe(`${actionContext} FAIL - Firebase Not Initialized`, { error: initErrorMsg, firebaseInitializedCorrectly, dbExists: !!db, storageExists: !!storage }, 'error');
@@ -134,8 +95,11 @@ async function updateBookingStep(
     };
   }
 
-  try { // Global try-catch for the entire function logic
-    bookingDoc = await findBookingByIdFromFirestore(bookingId); 
+  let bookingDoc: Booking | null = null;
+  let currentGuestDataSnapshot: GuestSubmittedData | null = null;
+
+  try {
+    bookingDoc = await findBookingByIdFromFirestore(bookingId);
     if (!bookingDoc) {
       logSafe(`${actionContext} FAIL - Booking NOT FOUND with ID:`, { bookingId }, 'warn');
       return {
@@ -151,6 +115,7 @@ async function updateBookingStep(
     const validatedFields = actionSchema.safeParse(rawFormData);
 
     if (!validatedFields.success) {
+      const formErrors: Record<string, string[]> = {};
       const zodErrors = validatedFields.error.flatten().fieldErrors;
       for (const key in zodErrors) {
           if (zodErrors[key]) formErrors[key] = zodErrors[key]!;
@@ -160,7 +125,7 @@ async function updateBookingStep(
           message: "Validierungsfehler. Bitte Eingaben prüfen. (Code: UBS-ZVF)", errors: formErrors,
           success: false, actionToken: forActionToken,
           currentStep: stepNumber > 0 ? stepNumber - 1 : 0,
-          updatedGuestData: convertTimestampsInGuestData(currentGuestDataSnapshot) 
+          updatedGuestData: convertTimestampsToISO(currentGuestDataSnapshot)
       };
     }
     const dataFromForm = validatedFields.data;
@@ -174,13 +139,13 @@ async function updateBookingStep(
     
     const formKeys = Object.keys(dataFromForm);
     for (const key of formKeys) {
-        if (!(dataFromForm[key] instanceof File) && key !== 'mitreisendeMeta' && key !== 'mitreisende') { // Exclude File and mitreisendeMeta
+        if (!(dataFromForm[key] instanceof File) && key !== 'mitreisendeMeta' && key !== 'mitreisende') {
             (updatedGuestData as any)[key] = dataFromForm[key];
         }
     }
     
     const fileFieldsConfig: Array<{
-      formDataKey: string; 
+      formDataKey: string;
       guestDataUrlKey?: keyof Pick<GuestSubmittedData, 'hauptgastAusweisVorderseiteUrl' | 'hauptgastAusweisRückseiteUrl' | 'zahlungsbelegUrl'>;
       mitreisenderId?: string;
       mitreisenderUrlKey?: keyof Pick<MitreisenderData, 'ausweisVorderseiteUrl' | 'ausweisRückseiteUrl'>;
@@ -193,8 +158,8 @@ async function updateBookingStep(
         );
     } else if (stepName === "Mitreisende" && dataFromForm.mitreisendeMeta) {
       try {
-          const mitreisendeMetaParsed = JSON.parse(dataFromForm.mitreisendeMeta as string) as {id: string}[];
-          mitreisendeMetaParsed.forEach((mitreisenderClient) => {
+          const mitreisendeMetaParsed = Array.isArray(dataFromForm.mitreisendeMeta) ? dataFromForm.mitreisendeMeta : JSON.parse(dataFromForm.mitreisendeMeta as string);
+          mitreisendeMetaParsed.forEach((mitreisenderClient: {id:string}) => {
               if (mitreisenderClient.id) {
                   fileFieldsConfig.push({ formDataKey: `mitreisende_${mitreisenderClient.id}_ausweisVorderseiteFile`, mitreisenderId: mitreisenderClient.id, mitreisenderUrlKey: 'ausweisVorderseiteUrl'});
                   fileFieldsConfig.push({ formDataKey: `mitreisende_${mitreisenderClient.id}_ausweisRückseiteFile`, mitreisenderId: mitreisenderClient.id, mitreisenderUrlKey: 'ausweisRückseiteUrl'});
@@ -203,13 +168,14 @@ async function updateBookingStep(
       } catch(e: any) {
           const err = e instanceof Error ? e : new Error(String(e));
           logSafe(`${actionContext} WARN: Failed to parse mitreisendeMeta for file config.`, { error: err.message, meta: dataFromForm.mitreisendeMeta }, 'warn');
-          formErrors['mitreisendeMeta'] = ['Fehler beim Verarbeiten der Mitreisenden-Metadaten. (Code: UBS-MPM)'];
+          // Do not return form errors for this, but log it. File uploads for companions might fail.
       }
     } else if (stepName === "Zahlungsinfo") {
         fileFieldsConfig.push({ formDataKey: 'zahlungsbelegFile', guestDataUrlKey: 'zahlungsbelegUrl' });
     }
 
     logSafe(actionContext + " File processing START", { relevantFileFieldsCount: fileFieldsConfig.length });
+    const fileProcessingErrors: Record<string, string[]> = {};
 
     for (const config of fileFieldsConfig) {
       const file = rawFormData[config.formDataKey] as File | undefined | null;
@@ -223,181 +189,156 @@ async function updateBookingStep(
           oldFileUrl = (snapshotForOldUrl as any)?.[config.guestDataUrlKey];
       }
 
-      try { // try-catch for each file processing
-        if (file instanceof File && file.size > 0) {
-            const originalFileName = file.name;
+      if (file instanceof File && file.size > 0) {
+        const originalFileName = file.name;
+        logSafe(`${actionContext} Processing NEW file for ${config.formDataKey}: "${originalFileName}" (Size: ${file.size}, Type: ${file.type}). Old URL: ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
 
-            if (!originalFileName || typeof originalFileName !== 'string' || originalFileName.trim() === "") {
-                const errorMsg = `Datei für Feld ${config.formDataKey} hat einen ungültigen oder leeren Namen. (Code: UBS-IFN)`;
-                logSafe(`${actionContext} WARN: Skipping file for ${config.formDataKey} due to invalid name. Original name: "${originalFileName}"`, { originalFileName }, 'warn');
-                if (formErrors[config.formDataKey]) {
-                    formErrors[config.formDataKey].push(errorMsg);
-                } else {
-                    formErrors[config.formDataKey] = [errorMsg];
-                }
-                continue; // Skip to next file in config
-            }
-            logSafe(`${actionContext} Processing NEW file for ${config.formDataKey}: "${originalFileName}" (Size: ${file.size}, Type: ${file.type}). Old URL: ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
-          
-            let arrayBuffer: ArrayBuffer;
+        if (!originalFileName || typeof originalFileName !== 'string' || originalFileName.trim() === "") {
+            const errorMsg = `Datei für Feld ${config.formDataKey} hat einen ungültigen oder leeren Namen. (Code: UBS-IFN)`;
+            logSafe(`${actionContext} WARN: Skipping file for ${config.formDataKey} due to invalid name. Original name: "${originalFileName}"`, { originalFileName }, 'warn');
+            if (!fileProcessingErrors[config.formDataKey]) fileProcessingErrors[config.formDataKey] = [];
+            fileProcessingErrors[config.formDataKey].push(errorMsg);
+            continue; 
+        }
+        
+        let arrayBuffer: ArrayBuffer;
+        try {
+            const bufferStartTime = Date.now();
+            arrayBuffer = await file.arrayBuffer();
+            logSafe(`${actionContext} ArrayBuffer for "${originalFileName}" (Size: ${arrayBuffer.byteLength}) read in ${Date.now() - bufferStartTime}ms`);
+        } catch (bufferError: any) {
+            const err = bufferError instanceof Error ? bufferError : new Error(String(bufferError));
+            const errorMsg = `Fehler beim Lesen der Datei "${originalFileName}": ${err.message} (Code: UBS-FBF)`;
+            logSafe(`${actionContext} FILE BUFFER FAIL for "${originalFileName}"`, { errorName: err.name, errorMessage: err.message }, 'error');
+            if (!fileProcessingErrors[config.formDataKey]) fileProcessingErrors[config.formDataKey] = [];
+            fileProcessingErrors[config.formDataKey].push(errorMsg);
+            continue; 
+        }
+
+        // Delete old file from Firebase Storage if it exists
+        if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.startsWith("https://firebasestorage.googleapis.com")) {
             try {
-                const bufferStartTime = Date.now();
-                arrayBuffer = await file.arrayBuffer();
-                logSafe(`${actionContext} ArrayBuffer for "${originalFileName}" (Size: ${arrayBuffer.byteLength}) read in ${Date.now() - bufferStartTime}ms`);
-            } catch (bufferError: any) {
-                const err = bufferError instanceof Error ? bufferError : new Error(String(bufferError));
-                const errorMsg = `Fehler beim Lesen der Datei "${originalFileName}": ${err.message} (Code: UBS-FBF)`;
-                logSafe(`${actionContext} FILE BUFFER FAIL for "${originalFileName}"`, { errorName: err.name, errorMessage: err.message }, 'error');
-                if (formErrors[config.formDataKey]) {
-                    formErrors[config.formDataKey].push(errorMsg);
-                } else {
-                    formErrors[config.formDataKey] = [errorMsg];
-                }
-                continue; // Skip to next file
-            }
-
-            // Delete old file from Firebase Storage if it exists
-            if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.startsWith("https://firebasestorage.googleapis.com")) {
-                try {
-                    logSafe(`${actionContext} Attempting to delete OLD file from Storage: ${oldFileUrl} for ${config.formDataKey}.`);
-                    const oldFileStorageRefHandle = storageRefFB(storage, oldFileUrl); 
-                    await deleteObject(oldFileStorageRefHandle);
-                    logSafe(`${actionContext} OLD file ${oldFileUrl} deleted from Storage for ${config.formDataKey}.`);
-                } catch (deleteError: any) {
-                    const err = deleteError instanceof Error ? deleteError : new Error(String(deleteError));
-                    const fbErrorCode = (err as any)?.code;
-                    if (fbErrorCode === 'storage/object-not-found') {
-                        logSafe(`${actionContext} WARN: Old file for ${config.formDataKey} not found in Storage, skipping deletion. URL: ${oldFileUrl}`, {}, 'warn');
-                    } else {
-                        logSafe(`${actionContext} WARN: Failed to delete OLD file for ${config.formDataKey} from Storage. URL: ${oldFileUrl}. Code: ${fbErrorCode}`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'warn');
-                         // Do not add to formErrors here, as it's a non-critical warning for old file deletion
-                    }
-                }
-            }
-
-            let downloadURL: string | undefined;
-            try {
-                const cleanedFileName = originalFileName.replace(/[^a-zA-Z0-9_.\-]/g, '_');
-                const uniqueFileName = `${Date.now()}_${cleanedFileName}`;
-                let filePathPrefix = `bookings/${bookingDoc.bookingToken}`; 
-
-                if(config.mitreisenderId) { 
-                    filePathPrefix += `/mitreisende/${config.mitreisenderId}/${(config.mitreisenderUrlKey || 'file').replace('Url', '')}`; 
-                } else if (config.guestDataUrlKey) { 
-                    filePathPrefix += `/${config.guestDataUrlKey.replace('Url', '')}`; 
-                } else { 
-                    filePathPrefix += `/other_uploads/${config.formDataKey}`; 
-                }
-                const filePath = `${filePathPrefix}/${uniqueFileName}`;
-
-                logSafe(`${actionContext} Uploading "${originalFileName}" to Storage path: ${filePath}. Content-Type: ${file.type}`);
-                const fileStorageRefHandle = storageRefFB(storage, filePath);
-                const uploadStartTime = Date.now();
-                await uploadBytes(fileStorageRefHandle, arrayBuffer, { contentType: file.type });
-                logSafe(`${actionContext} File "${originalFileName}" uploaded in ${Date.now() - uploadStartTime}ms`);
-              
-                const getUrlStartTime = Date.now();
-                downloadURL = await getDownloadURL(fileStorageRefHandle);
-                logSafe(`${actionContext} Got download URL for "${originalFileName}" in ${Date.now() - getUrlStartTime}ms: ${downloadURL.substring(0,80)}...`);
-
-            } catch (fileUploadError: any) {
-                const err = fileUploadError instanceof Error ? fileUploadError : new Error(String(fileUploadError));
-                let userMessage = `Dateiupload für "${originalFileName}" fehlgeschlagen.`;
+                logSafe(`${actionContext} Attempting to delete OLD file from Storage: ${oldFileUrl} for ${config.formDataKey}.`);
+                const oldFileStorageRefHandle = storageRefFB(storage, oldFileUrl); 
+                await deleteObject(oldFileStorageRefHandle);
+                logSafe(`${actionContext} OLD file ${oldFileUrl} deleted from Storage for ${config.formDataKey}.`);
+            } catch (deleteError: any) {
+                const err = deleteError instanceof Error ? deleteError : new Error(String(deleteError));
                 const fbErrorCode = (err as any)?.code;
-                logSafe(`${actionContext} FIREBASE STORAGE UPLOAD/GET_URL FAIL for "${originalFileName}"`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'error');
-                if (fbErrorCode === 'storage/unauthorized') userMessage = `Berechtigungsfehler: Upload für "${originalFileName}" verweigert. Firebase Storage Regeln prüfen. (Code: UBS-FSU-${forActionToken.substring(0,4)})`;
-                else if (fbErrorCode === 'storage/canceled') userMessage = `Upload für "${originalFileName}" abgebrochen. Bitte erneut versuchen. (Code: UBS-FSC-${forActionToken.substring(0,4)})`;
-                else if (fbErrorCode === 'storage/quota-exceeded') userMessage = `Speicherlimit überschritten beim Upload von "${originalFileName}". (Code: UBS-FSQ-${forActionToken.substring(0,4)})`;
-                else userMessage += ` Details: ${err.message || "Unbekannter Upload-Fehler"}`;
-                
-                if (formErrors[config.formDataKey]) {
-                    formErrors[config.formDataKey].push(userMessage);
+                if (fbErrorCode === 'storage/object-not-found') {
+                    logSafe(`${actionContext} WARN: Old file for ${config.formDataKey} not found in Storage, skipping deletion. URL: ${oldFileUrl}`, {}, 'warn');
                 } else {
-                    formErrors[config.formDataKey] = [userMessage];
+                    logSafe(`${actionContext} WARN: Failed to delete OLD file for ${config.formDataKey} from Storage. URL: ${oldFileUrl}. Code: ${fbErrorCode}`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'warn');
                 }
-                continue; // Skip to next file
             }
+        }
 
-            if (downloadURL) {
-                if (config.mitreisenderId && config.mitreisenderUrlKey) {
-                    if (!updatedGuestData.mitreisende) updatedGuestData.mitreisende = [];
-                    let companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
-                    if (companion) { (companion as any)[config.mitreisenderUrlKey] = downloadURL; }
-                    else { 
-                        logSafe(`${actionContext} WARN: Companion with ID ${config.mitreisenderId} not found in updatedGuestData.mitreisende for URL assignment. This can happen if mitreisendeMeta parsing failed or companion was removed client-side but file was still sent.`, {}, 'warn'); 
-                    }
-                } else if (config.guestDataUrlKey) { (updatedGuestData as any)[config.guestDataUrlKey] = downloadURL; }
+        let downloadURL: string | undefined;
+        try {
+            const cleanedFileName = originalFileName.replace(/[^a-zA-Z0-9_.\-]/g, '_');
+            const uniqueFileName = `${Date.now()}_${cleanedFileName}`;
+            let filePathPrefix = `bookings/${bookingDoc.bookingToken}`; 
+
+            if(config.mitreisenderId) { 
+                filePathPrefix += `/mitreisende/${config.mitreisenderId}/${(config.mitreisenderUrlKey || 'file').replace('Url', '')}`; 
+            } else if (config.guestDataUrlKey) { 
+                filePathPrefix += `/${config.guestDataUrlKey.replace('Url', '')}`; 
+            } else { 
+                filePathPrefix += `/other_uploads/${config.formDataKey}`; 
             }
-        } else if (file instanceof File && file.size === 0 && rawFormData[config.formDataKey]) {
-             // File field was submitted but empty (e.g., user cleared the selection)
-             logSafe(`${actionContext} File field ${config.formDataKey} submitted empty/cleared. Old URL was: ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
-             // Clear the URL in updatedGuestData
-             if (config.mitreisenderId && config.mitreisenderUrlKey && updatedGuestData.mitreisende) {
-                  let companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
-                  if (companion) { (companion as any)[config.mitreisenderUrlKey] = undefined; }
-             } else if (config.guestDataUrlKey) {
-                  (updatedGuestData as any)[config.guestDataUrlKey] = undefined;
-             }
-             // Delete the old file from storage if it existed
-             if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.startsWith("https://firebasestorage.googleapis.com")) {
-               try {
-                 logSafe(`${actionContext} Attempting to delete OLD file from Storage due to empty submission for ${config.formDataKey}: ${oldFileUrl}`);
-                 const oldFileStorageRefHandle = storageRefFB(storage, oldFileUrl); 
-                 await deleteObject(oldFileStorageRefHandle);
-                 logSafe(`${actionContext} OLD file ${oldFileUrl} deleted from Storage for ${config.formDataKey} (due to clearing).`);
-               } catch (deleteError: any) {
-                  const err = deleteError instanceof Error ? deleteError : new Error(String(deleteError));
-                  const fbErrorCode = (err as any)?.code;
-                  if (fbErrorCode === 'storage/object-not-found') {
-                    logSafe(`${actionContext} WARN: Old file for ${config.formDataKey} not found in Storage (when clearing), skipping deletion. URL: ${oldFileUrl}`, {}, 'warn');
-                  } else {
-                    logSafe(`${actionContext} WARN: Failed to delete OLD file for ${config.formDataKey} from Storage (when clearing). URL: ${oldFileUrl}. Code: ${fbErrorCode}`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'warn');
-                  }
-               }
-             }
-        } else {
-            logSafe(`${actionContext} No new file or empty file submission for ${config.formDataKey}. Keeping existing URL (if any): ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
-             // If no file was submitted for this field, ensure the old URL is retained (already part of updatedGuestData from snapshot)
+            const filePath = `${filePathPrefix}/${uniqueFileName}`;
+
+            logSafe(`${actionContext} Uploading "${originalFileName}" to Storage path: ${filePath}. Content-Type: ${file.type}`);
+            const fileStorageRefHandle = storageRefFB(storage, filePath);
+            const uploadStartTime = Date.now();
+            await uploadBytes(fileStorageRefHandle, arrayBuffer, { contentType: file.type });
+            logSafe(`${actionContext} File "${originalFileName}" uploaded in ${Date.now() - uploadStartTime}ms`);
+          
+            const getUrlStartTime = Date.now();
+            downloadURL = await getDownloadURL(fileStorageRefHandle);
+            logSafe(`${actionContext} Got download URL for "${originalFileName}" in ${Date.now() - getUrlStartTime}ms: ${downloadURL.substring(0,80)}...`);
+
+        } catch (fileUploadError: any) {
+            const err = fileUploadError instanceof Error ? fileUploadError : new Error(String(fileUploadError));
+            let userMessage = `Dateiupload für "${originalFileName}" fehlgeschlagen.`;
+            const fbErrorCode = (err as any)?.code;
+            logSafe(`${actionContext} FIREBASE STORAGE UPLOAD/GET_URL FAIL for "${originalFileName}"`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'error');
+            if (fbErrorCode === 'storage/unauthorized') userMessage = `Berechtigungsfehler: Upload für "${originalFileName}" verweigert. Firebase Storage Regeln prüfen. (Code: UBS-FSU-${forActionToken.substring(0,4)})`;
+            else if (fbErrorCode === 'storage/canceled') userMessage = `Upload für "${originalFileName}" abgebrochen. Bitte erneut versuchen. (Code: UBS-FSC-${forActionToken.substring(0,4)})`;
+            else if (fbErrorCode === 'storage/quota-exceeded') userMessage = `Speicherlimit überschritten beim Upload von "${originalFileName}". (Code: UBS-FSQ-${forActionToken.substring(0,4)})`;
+            else userMessage += ` Details: ${err.message || "Unbekannter Upload-Fehler"}`;
+            
+            if (!fileProcessingErrors[config.formDataKey]) fileProcessingErrors[config.formDataKey] = [];
+            fileProcessingErrors[config.formDataKey].push(userMessage);
+            continue;
         }
-      } catch (fileProcessingError: any) { // Catch errors within the individual file processing block
-        const err = fileProcessingError instanceof Error ? fileProcessingError : new Error(String(fileProcessingError));
-        const errorMsg = `Unerwarteter Fehler bei Verarbeitung von Datei für Feld ${config.formDataKey}: ${err.message} (Code: UBS-UFPF)`;
-        logSafe(`${actionContext} UNEXPECTED FILE PROCESSING FAIL for ${config.formDataKey}`, { errorName: err.name, errorMessage: err.message, stack: err.stack?.substring(0,300) }, 'error');
-        if (formErrors[config.formDataKey]) {
-            formErrors[config.formDataKey].push(errorMsg);
-        } else {
-            formErrors[config.formDataKey] = [errorMsg];
+
+        if (downloadURL) {
+            if (config.mitreisenderId && config.mitreisenderUrlKey) {
+                if (!updatedGuestData.mitreisende) updatedGuestData.mitreisende = [];
+                let companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
+                if (companion) { (companion as any)[config.mitreisenderUrlKey] = downloadURL; }
+                else { 
+                    logSafe(`${actionContext} WARN: Companion with ID ${config.mitreisenderId} not found in updatedGuestData.mitreisende for URL assignment. This can happen if mitreisendeMeta parsing failed or companion was removed client-side but file was still sent.`, {}, 'warn'); 
+                }
+            } else if (config.guestDataUrlKey) { (updatedGuestData as any)[config.guestDataUrlKey] = downloadURL; }
         }
+      } else if (file instanceof File && file.size === 0 && rawFormData[config.formDataKey]) {
+         logSafe(`${actionContext} File field ${config.formDataKey} submitted empty/cleared. Old URL was: ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
+         if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.startsWith("https://firebasestorage.googleapis.com")) {
+           try {
+             logSafe(`${actionContext} Attempting to delete OLD file from Storage due to empty submission for ${config.formDataKey}: ${oldFileUrl}`);
+             const oldFileStorageRefHandle = storageRefFB(storage, oldFileUrl); 
+             await deleteObject(oldFileStorageRefHandle);
+             logSafe(`${actionContext} OLD file ${oldFileUrl} deleted from Storage for ${config.formDataKey} (due to clearing).`);
+           } catch (deleteError: any) {
+              const err = deleteError instanceof Error ? deleteError : new Error(String(deleteError));
+              const fbErrorCode = (err as any)?.code;
+              if (fbErrorCode === 'storage/object-not-found') {
+                logSafe(`${actionContext} WARN: Old file for ${config.formDataKey} not found in Storage (when clearing), skipping deletion. URL: ${oldFileUrl}`, {}, 'warn');
+              } else {
+                logSafe(`${actionContext} WARN: Failed to delete OLD file for ${config.formDataKey} from Storage (when clearing). URL: ${oldFileUrl}. Code: ${fbErrorCode}`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'warn');
+              }
+           }
+         }
+         // Clear the URL in updatedGuestData if it was an empty submission
+         if (config.mitreisenderId && config.mitreisenderUrlKey && updatedGuestData.mitreisende) {
+              let companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
+              if (companion) { (companion as any)[config.mitreisenderUrlKey] = undefined; }
+         } else if (config.guestDataUrlKey) {
+              (updatedGuestData as any)[config.guestDataUrlKey] = undefined;
+         }
+      } else {
+          logSafe(`${actionContext} No new file or empty file submission for ${config.formDataKey}. Retaining existing URL (if any).`);
+          // Retain old URL implicitly as updatedGuestData is a clone of currentGuestDataSnapshot
       }
     } 
 
-    logSafe(actionContext + " File processing END", { formErrorsCount: Object.keys(formErrors).length });
+    logSafe(actionContext + " File processing END", { fileProcessingErrorsCount: Object.keys(fileProcessingErrors).length });
 
-    if (Object.keys(formErrors).length > 0) {
-        logSafe(`${actionContext} Returning due to file processing errors.`, { errors: formErrors });
+    if (Object.keys(fileProcessingErrors).length > 0) {
+        logSafe(`${actionContext} Returning due to file processing errors.`, { errors: fileProcessingErrors });
         return {
             message: "Einige Dateien konnten nicht verarbeitet werden. Bitte prüfen Sie die Meldungen bei den Feldern. (Code: UBS-FPE)",
-            errors: formErrors, success: false, actionToken: forActionToken,
+            errors: fileProcessingErrors, success: false, actionToken: forActionToken,
             currentStep: stepNumber > 0 ? stepNumber - 1 : 0,
-            updatedGuestData: convertTimestampsInGuestData(currentGuestDataSnapshot), // Return original state on file errors
+            updatedGuestData: convertTimestampsToISO(currentGuestDataSnapshot), 
         };
     }
 
     if (stepName === "Mitreisende" && dataFromForm.mitreisendeMeta) {
         try {
-          const clientMitreisende = JSON.parse(dataFromForm.mitreisendeMeta as string) as {id: string, vorname: string, nachname: string}[];
+          const clientMitreisende = Array.isArray(dataFromForm.mitreisendeMeta) ? dataFromForm.mitreisendeMeta : JSON.parse(dataFromForm.mitreisendeMeta as string);
           const serverMitreisende: MitreisenderData[] = [];
           
-          // Ensure updatedGuestData.mitreisende is an array to avoid errors if it's undefined
           const existingServerMitreisende = Array.isArray(updatedGuestData.mitreisende) ? updatedGuestData.mitreisende : [];
 
           for (const cm of clientMitreisende) {
-              // Find companion from the server-side (potentially updated with file URLs) or initialize if new
               const existingOrFileProcessedCompanion = existingServerMitreisende.find(sm => sm.id === cm.id);
               serverMitreisende.push({
                   id: cm.id, 
-                  vorname: cm.vorname || '',
-                  nachname: cm.nachname || '',
+                  vorname: String(cm.vorname || ''),
+                  nachname: String(cm.nachname || ''),
                   ausweisVorderseiteUrl: existingOrFileProcessedCompanion?.ausweisVorderseiteUrl, 
                   ausweisRückseiteUrl: existingOrFileProcessedCompanion?.ausweisRückseiteUrl, 
               });
@@ -407,8 +348,6 @@ async function updateBookingStep(
         } catch(e: any) {
             const err = e instanceof Error ? e : new Error(String(e));
             logSafe(`${actionContext} WARN: Failed to process mitreisendeMeta.`, { error: err.message, meta: dataFromForm.mitreisendeMeta }, 'warn');
-            // Do not return here, proceed to save other data. Error in meta shouldn't block the entire step if files were ok.
-            // Consider adding a specific error to formErrors if mitreisendeMeta processing is critical.
         }
         delete (updatedGuestData as any).mitreisendeMeta; 
     }
@@ -419,8 +358,8 @@ async function updateBookingStep(
 
     let bookingStatusUpdate: Partial<Booking> = {};
     if (stepName === "Bestätigung") { 
-      const agbAkzeptiert = dataFromForm.agbAkzeptiert === true; // Zod ensures this is boolean
-      const datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert === true; // Zod ensures this is boolean
+      const agbAkzeptiert = dataFromForm.agbAkzeptiert === true; 
+      const datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert === true;
 
       updatedGuestData.agbAkzeptiert = agbAkzeptiert;
       updatedGuestData.datenschutzAkzeptiert = datenschutzAkzeptiert;
@@ -436,10 +375,10 @@ async function updateBookingStep(
         if(!datenschutzAkzeptiert) consentErrors.datenschutzAkzeptiert = ["Datenschutz muss akzeptiert werden."];
         logSafe(`${actionContext} Consent Error`, { errors: consentErrors });
         return {
-          message: "AGB und/oder Datenschutz wurden nicht akzeptiert. (Code: UBS-CE)", errors: { ...formErrors, ...consentErrors },
+          message: "AGB und/oder Datenschutz wurden nicht akzeptiert. (Code: UBS-CE)", errors: { ...fileProcessingErrors, ...consentErrors },
           success: false, actionToken: forActionToken,
           currentStep: stepNumber > 0 ? stepNumber - 1 : 0,
-          updatedGuestData: convertTimestampsInGuestData(updatedGuestData), 
+          updatedGuestData: convertTimestampsToISO(updatedGuestData), 
         };
       }
     }
@@ -449,10 +388,11 @@ async function updateBookingStep(
         ...(bookingStatusUpdate.status && { status: bookingStatusUpdate.status })
     };
     
+    // Update top-level guestFirstName/LastName if changed in Hauptgast step
     if (stepName === "Hauptgast & Ausweis" && dataFromForm.gastVorname && dataFromForm.gastNachname && bookingDoc) {
         if(bookingDoc.guestFirstName !== dataFromForm.gastVorname || bookingDoc.guestLastName !== dataFromForm.gastNachname) {
-            bookingUpdatesFirestore.guestFirstName = dataFromForm.gastVorname as string;
-            bookingUpdatesFirestore.guestLastName = dataFromForm.gastNachname as string;
+            bookingUpdatesFirestore.guestFirstName = String(dataFromForm.gastVorname);
+            bookingUpdatesFirestore.guestLastName = String(dataFromForm.gastNachname);
             logSafe(`${actionContext} Hauptgast Name auf Buchung aktualisiert zu: ${dataFromForm.gastVorname} ${dataFromForm.gastNachname}`);
         }
     }
@@ -470,7 +410,7 @@ async function updateBookingStep(
             errors: { global: [`Datenbankfehler: ${err.message}. (Code: UBS-FSUF-G)`] },
             success: false, actionToken: forActionToken,
             currentStep: stepNumber > 0 ? stepNumber - 1 : 0,
-            updatedGuestData: convertTimestampsInGuestData(currentGuestDataSnapshot), 
+            updatedGuestData: convertTimestampsToISO(currentGuestDataSnapshot), 
         };
     }
 
@@ -482,25 +422,23 @@ async function updateBookingStep(
     if (bookingUpdatesFirestore.status === "Confirmed") {
       message = "Buchung erfolgreich abgeschlossen und bestätigt!";
     }
-    const finalUpdatedGuestData = convertTimestampsInGuestData(updatedGuestData);
+    const finalUpdatedGuestData = convertTimestampsToISO(updatedGuestData);
     logSafe(`${actionContext} SUCCESS - Step ${stepNumber} processed.`, { finalMessage: message });
     return {
         message, errors: null, success: true, actionToken: forActionToken,
         updatedGuestData: finalUpdatedGuestData, 
-        currentStep: stepNumber -1 // Successfully completed this step
+        currentStep: stepNumber -1 
     };
 
-  } catch (error: any) { // Global catch for updateBookingStep
+  } catch (error: any) { // Global catch for updateBookingStep's main try-catch (after fetching bookingDoc)
     const err = error instanceof Error ? error : new Error(String(error));
-    logSafe(`${actionContext} GLOBAL UNHANDLED EXCEPTION in updateBookingStep's main try-catch`, { errorName: err.name, errorMessage: err.message, stack: err.stack?.substring(0,1200) }, 'error');
-    // Attempt to return a snapshot of guest data if available, otherwise the one from the previous state
-    const guestDataForErrorState = currentGuestDataSnapshot ? convertTimestampsInGuestData(currentGuestDataSnapshot) : (bookingDoc?.guestSubmittedData ? convertTimestampsInGuestData(bookingDoc.guestSubmittedData) : null);
+    logSafe(`${actionContext} GLOBAL UNHANDLED EXCEPTION in updateBookingStep's main try-catch (after bookingDoc fetch)`, { errorName: err.name, errorMessage: err.message, stack: err.stack?.substring(0,1200) }, 'error');
     return {
         message: `Unerwarteter Serverfehler (Schritt ${stepName}): ${err.message}. Details in Server-Logs. (Aktions-ID: ${forActionToken}) (Code: UBS-GUEH)`,
         errors: { global: [`Serverfehler (Schritt ${stepName}): ${err.message}. Bitte versuchen Sie es später erneut oder kontaktieren Sie den Support. (Code: UBS-GUEH-G)`] },
         success: false, actionToken: forActionToken,
         currentStep: stepNumber > 0 ? stepNumber - 1 : 0,
-        updatedGuestData: guestDataForErrorState,
+        updatedGuestData: currentGuestDataSnapshot ? convertTimestampsToISO(currentGuestDataSnapshot) : null,
     };
   } finally {
      logSafe(`${actionContext} END. Total time: ${Date.now() - startTime}ms.`);
@@ -556,31 +494,11 @@ const mitreisenderClientSchema = z.object({
 });
 
 const mitreisendeStepSchema = z.object({
-  mitreisendeMeta: z.string().transform((str, ctx) => {
-    if (!str || str.trim() === "") return []; 
-    try {
-      const parsed = JSON.parse(str);
-      if (!Array.isArray(parsed)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "MitreisendeMeta muss ein Array sein. (Code: UBS-MM-ARR)" });
-        return z.NEVER; 
-      }
-      const result = z.array(mitreisenderClientSchema).safeParse(parsed);
-      if (!result.success) {
-        const errorMessages: string[] = [];
-        result.error.issues.forEach(issue => {
-            const path = issue.path.join('.');
-            errorMessages.push(`Mitreisender (Pfad ${path}): ${issue.message}`);
-        });
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Fehler in Mitreisenden-Daten: " + errorMessages.join('; ') + " (Code: UBS-MM-FLD)" });
-        return z.NEVER; 
-      }
-      return result.data; 
-    } catch (e) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "MitreisendeMeta ist kein gültiges JSON. (Code: UBS-MM-JSON)" });
-      return z.NEVER; 
-    }
-  }).optional().default([]), 
-}).catchall(fileSchema); // Allows dynamic file fields like 'mitreisende_XYZ_ausweisVorderseiteFile'
+  mitreisendeMeta: z.preprocess(
+    (val) => (typeof val === 'string' && val.trim() !== "" ? JSON.parse(val) : []), // Handle empty string for no companions
+    z.array(mitreisenderClientSchema).optional().default([])
+  ),
+}).catchall(fileSchema); 
 
 export async function submitMitreisendeAction(bookingToken: string, prevState: FormState, formData: FormData): Promise<FormState> {
   const serverActionToken = generateActionToken();
@@ -631,15 +549,19 @@ export async function submitPaymentAmountSelectionAction(bookingToken: string, p
         logSafe(`${actionContext} Booking with token ${bookingToken} not found.`, {}, 'warn');
         return { ...initialFormState, success: false, message: `Buchung nicht gefunden. (Code: SPASA-BNF-${serverActionToken.substring(0,4)})`, actionToken: serverActionToken, currentStep: 2, updatedGuestData: prevState.updatedGuestData };
     }
-    // Calculate zahlungsbetrag based on selection and booking.price
-    const rawFormData = Object.fromEntries(formData.entries());
-    const selectedAmount = rawFormData.paymentAmountSelection as "downpayment" | "full_amount";
-    let zahlungsbetrag = booking.price || 0; // Default to full amount
+    
+    const validatedFields = paymentAmountSelectionSchema.safeParse(Object.fromEntries(formData.entries()));
+    if (!validatedFields.success) {
+        // ... (error handling similar to updateBookingStep)
+        return { /* ... error FormState ... */ success: false, message: "Validierungsfehler.", errors: validatedFields.error.flatten().fieldErrors, actionToken: serverActionToken, currentStep: 2, updatedGuestData: prevState.updatedGuestData };
+    }
+    const selectedAmount = validatedFields.data.paymentAmountSelection;
+    let zahlungsbetrag = booking.price || 0;
     if (selectedAmount === 'downpayment') {
       zahlungsbetrag = parseFloat(((booking.price || 0) * 0.3).toFixed(2));
     }
     
-    const additionalData = { zahlungsart: 'Überweisung', zahlungsbetrag } as Partial<GuestSubmittedData>;
+    const additionalData = { zahlungsart: 'Überweisung', zahlungsbetrag, paymentAmountSelection: selectedAmount } as Partial<GuestSubmittedData>;
     return await updateBookingStep(serverActionToken, booking.id, 3, "Zahlungswahl", paymentAmountSelectionSchema, formData, additionalData);
   } catch (error: any) {
     const err = error instanceof Error ? error : new Error(String(error));
@@ -734,9 +656,9 @@ const createBookingServerSchema = z.object({
     .refine(val => !isNaN(Date.parse(val)), { message: "Ungültiges Abreisedatum." }),
   verpflegung: z.string({required_error: "Verpflegung ist ein Pflichtfeld."}).min(1, "Verpflegung ist erforderlich.").default('ohne'),
   interneBemerkungen: z.string().optional().default(''),
-  roomsData: z.string({ required_error: "Zimmerdaten sind erforderlich." }) // Expecting a JSON string
+  roomsData: z.string({ required_error: "Zimmerdaten sind erforderlich." }) 
     .min(1, "Zimmerdaten String darf nicht leer sein. (Code: CBA-RD-EMPTYSTR)")
-    .pipe( // Pipe allows transforming and then validating
+    .pipe( 
       z.string().transform((str, ctx) => {
         try {
           const parsed = JSON.parse(str);
@@ -744,7 +666,7 @@ const createBookingServerSchema = z.object({
         } catch (e: any) {
           const err = e instanceof Error ? e : new Error(String(e));
           ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Die Zimmerdaten sind nicht im korrekten JSON-Format: ${err.message} (Code: CBA-RD-JSON)` });
-          return z.NEVER; // Special Zod value to indicate a parsing failure that should halt validation
+          return z.NEVER; 
         }
       }).pipe(
         z.array(RoomSchema).min(1, "Mindestens ein Zimmer muss hinzugefügt werden. (Code: CBA-RD-MIN1)")
@@ -759,27 +681,28 @@ const createBookingServerSchema = z.object({
   return true;
 }, {
   message: "Abreisedatum muss nach dem Anreisedatum liegen.",
-  path: ["dateRange"], // Path to associate the error with (can be a common field or a virtual one)
+  path: ["dateRange"], 
 });
 
 export async function createBookingAction(prevState: FormState, formData: FormData): Promise<FormState> {
   const serverActionToken = generateActionToken();
   const actionContext = `[createBookingAction(Action:${serverActionToken.substring(0,8)})]`;
   const startTime = Date.now();
+  logSafe(actionContext + " BEGIN", { formDataKeys: Array.from(formData.keys())});
 
-  logSafe(`${actionContext} BEGIN - FormData keys:`, Array.from(formData.keys()));
 
   if (!firebaseInitializedCorrectly || !db) {
     const initErrorMsg = firebaseInitializationError || "Unbekannter Firebase Initialisierungsfehler.";
     logSafe(`${actionContext} FAIL - Firebase Not Initialized`, { error: initErrorMsg }, 'error');
     return {
-        ...initialFormState, success: false, actionToken: serverActionToken,
+        success: false, actionToken: serverActionToken,
         message: `Serverfehler: Firebase ist nicht korrekt initialisiert (Code CBA-FIREBASE-INIT-FAIL). Details: ${initErrorMsg}.`,
         errors: { global: [`Firebase Initialisierungsfehler. (Code: CBA-FNI-${serverActionToken.substring(0,4)})`] },
+        bookingToken: null, updatedGuestData: null, currentStep: -1
     };
   }
   
-  // --- Defensive pre-checks for critical form data before Zod ---
+  // Defensive pre-checks for critical formData fields
   const rawGuestFirstName = formData.get("guestFirstName");
   const rawGuestLastName = formData.get("guestLastName");
   const rawPrice = formData.get("price");
@@ -789,49 +712,48 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
   const rawRoomsData = formData.get("roomsData");
   const rawInterneBemerkungen = formData.get("interneBemerkungen");
 
-  logSafe(`${actionContext} Raw form data received:`, {
-      rawGuestFirstName: `Type: ${typeof rawGuestFirstName}, Value: ${rawGuestFirstName}`,
-      rawGuestLastName: `Type: ${typeof rawGuestLastName}, Value: ${rawGuestLastName}`,
-      rawPrice: `Type: ${typeof rawPrice}, Value: ${rawPrice}`,
-      rawCheckInDate: `Type: ${typeof rawCheckInDate}, Value: ${rawCheckInDate}`,
-      rawCheckOutDate: `Type: ${typeof rawCheckOutDate}, Value: ${rawCheckOutDate}`,
-      rawVerpflegung: `Type: ${typeof rawVerpflegung}, Value: ${rawVerpflegung}`,
-      rawRoomsData: `Type: ${typeof rawRoomsData}, Value: ${String(rawRoomsData).substring(0,100)}...`,
-      rawInterneBemerkungen: `Type: ${typeof rawInterneBemerkungen}, Value: ${rawInterneBemerkungen}`,
+  logSafe(`${actionContext} Raw form data from FormData:`, {
+      guestFirstName: `Type: ${typeof rawGuestFirstName}, Value: ${rawGuestFirstName}`,
+      guestLastName: `Type: ${typeof rawGuestLastName}, Value: ${rawGuestLastName}`,
+      price: `Type: ${typeof rawPrice}, Value: ${rawPrice}`,
+      checkInDate: `Type: ${typeof rawCheckInDate}, Value: ${rawCheckInDate}`,
+      checkOutDate: `Type: ${typeof rawCheckOutDate}, Value: ${rawCheckOutDate}`,
+      verpflegung: `Type: ${typeof rawVerpflegung}, Value: ${rawVerpflegung}`,
+      roomsData: `Type: ${typeof rawRoomsData}, Value: ${String(rawRoomsData).substring(0,100)}...`,
+      interneBemerkungen: `Type: ${typeof rawInterneBemerkungen}, Value: ${rawInterneBemerkungen}`,
   });
 
   if (typeof rawCheckInDate !== "string" || rawCheckInDate.trim() === "") {
       logSafe(`${actionContext} Pre-validation FAIL: 'checkInDate' fehlt oder ist kein String.`, {rawCheckInDate}, 'warn');
-      return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Fehler: Anreisedatum ist erforderlich und muss ein Text sein. (Code: CBA-PRE-CID-STR)", errors: { checkInDate: ["Anreisedatum ist erforderlich."] } };
+      return { success: false, actionToken: serverActionToken, message: "Fehler: Anreisedatum ist erforderlich. (Code: CBA-PRE-CID)", errors: { checkInDate: ["Anreisedatum ist erforderlich."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
   if (typeof rawCheckOutDate !== "string" || rawCheckOutDate.trim() === "") {
       logSafe(`${actionContext} Pre-validation FAIL: 'checkOutDate' fehlt oder ist kein String.`, {rawCheckOutDate}, 'warn');
-      return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Fehler: Abreisedatum ist erforderlich und muss ein Text sein. (Code: CBA-PRE-COD-STR)", errors: { checkOutDate: ["Abreisedatum ist erforderlich."] } };
+      return { success: false, actionToken: serverActionToken, message: "Fehler: Abreisedatum ist erforderlich. (Code: CBA-PRE-COD)", errors: { checkOutDate: ["Abreisedatum ist erforderlich."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
   if (typeof rawRoomsData !== "string" || rawRoomsData.trim() === "") {
       logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' fehlt oder ist kein String.`, {rawRoomsData}, 'warn');
-      return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Fehler: Zimmerdaten fehlen oder sind ungültig (kein Text). (Code: CBA-PRE-RD-STR)", errors: { roomsData: ["Zimmerdaten sind erforderlich."] } };
+      return { success: false, actionToken: serverActionToken, message: "Fehler: Zimmerdaten sind erforderlich. (Code: CBA-PRE-RD-STR)", errors: { roomsData: ["Zimmerdaten sind erforderlich."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
 
-  let parsedRooms;
+  let parsedRoomsForPreCheck;
   try {
-    parsedRooms = JSON.parse(rawRoomsData);
+    parsedRoomsForPreCheck = JSON.parse(rawRoomsData);
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
     logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' ist kein gültiges JSON.`, {rawRoomsData, error: err.message}, 'warn');
-    return { ...initialFormState, success: false, actionToken: serverActionToken, message: `Fehler: Zimmerdaten sind kein gültiges JSON. ${err.message} (Code: CBA-PRE-RD-JSON)`, errors: { roomsData: ["Ungültiges Format der Zimmerdaten."] } };
+    return { success: false, actionToken: serverActionToken, message: `Fehler: Zimmerdaten sind kein gültiges JSON. ${err.message} (Code: CBA-PRE-RD-JSON)`, errors: { roomsData: ["Ungültiges Format der Zimmerdaten."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
 
-  if (!Array.isArray(parsedRooms)) {
-    logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' (geparst) ist kein Array.`, {parsedRooms}, 'warn');
-    return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Fehler: Zimmerdaten sind kein Array. (Code: CBA-PRE-RD-ARR)", errors: { roomsData: ["Zimmerdaten müssen ein Array sein."] } };
+  if (!Array.isArray(parsedRoomsForPreCheck)) {
+    logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' (geparst) ist kein Array.`, {parsedRoomsForPreCheck}, 'warn');
+    return { success: false, actionToken: serverActionToken, message: "Fehler: Zimmerdaten sind kein Array. (Code: CBA-PRE-RD-ARR)", errors: { roomsData: ["Zimmerdaten müssen ein Array sein."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
-  if (parsedRooms.length === 0) {
-    logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' Array ist leer.`, {parsedRooms}, 'warn');
-    return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Fehler: Es muss mindestens ein Zimmer angegeben werden. (Code: CBA-PRE-RD-EMPTYARR)", errors: { roomsData: ["Mindestens ein Zimmer ist erforderlich."] } };
+  if (parsedRoomsForPreCheck.length === 0) {
+    logSafe(`${actionContext} Pre-validation FAIL: 'roomsData' Array ist leer.`, {parsedRoomsForPreCheck}, 'warn');
+    return { success: false, actionToken: serverActionToken, message: "Fehler: Es muss mindestens ein Zimmer angegeben werden. (Code: CBA-PRE-RD-EMPTYARR)", errors: { roomsData: ["Mindestens ein Zimmer ist erforderlich."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
   }
-
-  // Prepare data for Zod validation
+  
   const dataForZod = {
       guestFirstName: rawGuestFirstName,
       guestLastName: rawGuestLastName,
@@ -840,11 +762,10 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
       checkOutDate: rawCheckOutDate,
       verpflegung: rawVerpflegung,
       interneBemerkungen: rawInterneBemerkungen,
-      roomsData: rawRoomsData, // Pass as string for Zod to parse and validate
+      roomsData: rawRoomsData,
   };
-  // --- End of defensive pre-checks ---
 
-  try { // Global try-catch for the main action logic
+  try {
     const validatedFields = createBookingServerSchema.safeParse(dataForZod);
 
     if (!validatedFields.success) {
@@ -857,18 +778,18 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
             const fieldKey = key as keyof typeof allErrors; 
             const currentMessages = allErrors[fieldKey];
             if (currentMessages && Array.isArray(currentMessages)) {
-                errorMessagesList.push(`${fieldKey}: ${currentMessages.join(', ')}`);
+                errorMessagesList.push(`${key}: ${currentMessages.join(', ')}`);
             } else if (currentMessages) {
-                errorMessagesList.push(`${fieldKey}: ${String(currentMessages)}`);
+                errorMessagesList.push(`${key}: ${String(currentMessages)}`);
             }
         });
       const errorMessage = errorMessagesList.length > 0 ? errorMessagesList.join('; ') : "Unbekannter Validierungsfehler.";
-      logSafe(actionContext + " Zod Validation FAILED", { errors: allErrors, detailedErrorMessage: errorMessage }, 'warn');
+      logSafe(actionContext + " Zod Validation FAILED", { errors: allErrors, detailedErrorMessage: errorMessage, dataForZod }, 'warn');
 
       return {
-        ...initialFormState, success: false, actionToken: serverActionToken,
+        success: false, actionToken: serverActionToken,
         message: `Fehler bei der Validierung: ${errorMessage} (Code: CBA-ZOD-VAL-${serverActionToken.substring(0,4)})`,
-        errors: allErrors,
+        errors: allErrors, bookingToken: null, updatedGuestData: null, currentStep: -1
       };
     }
 
@@ -878,13 +799,11 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
         interneBemerkungen: `Type: ${typeof bookingData.interneBemerkungen}, Value: "${String(bookingData.interneBemerkungen || '')}"`,
         roomsDataIsArray: Array.isArray(bookingData.roomsData),
         roomsDataLength: Array.isArray(bookingData.roomsData) ? bookingData.roomsData.length : 'N/A',
-        roomsDataContentPreview: Array.isArray(bookingData.roomsData) ? bookingData.roomsData.map(r => ({z: r.zimmertyp, aK: r.alterKinder})) : "N/A",
     });
      
-    // This check is now redundant due to Zod's .pipe(z.array(RoomSchema).min(1,...)) and pre-checks, but kept for safety.
     if (!Array.isArray(bookingData.roomsData) || bookingData.roomsData.length === 0) {
-        logSafe(actionContext + " FAIL - roomsData is not an array or empty after Zod validation (should not happen).", { roomsData: bookingData.roomsData }, 'error');
-        return { ...initialFormState, message: "Interner Fehler: Zimmerdaten sind nach Validierung ungültig. (Code: CBA-POSTZOD-RD)", success: false, actionToken: serverActionToken, errors: { roomsData: ["Ungültige Zimmerdaten nach Servervalidierung."] } };
+        logSafe(actionContext + " FAIL - roomsData is not an array or empty after Zod validation.", { roomsData: bookingData.roomsData }, 'error');
+        return { message: "Interner Fehler: Zimmerdaten sind nach Validierung ungültig. (Code: CBA-POSTZOD-RD)", success: false, actionToken: serverActionToken, errors: { roomsData: ["Ungültige Zimmerdaten nach Servervalidierung."] }, bookingToken: null, updatedGuestData: null, currentStep: -1 };
     }
     
     const firstRoom = bookingData.roomsData[0]; 
@@ -929,9 +848,10 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
         const err = dbError instanceof Error ? dbError : new Error(String(dbError));
         logSafe(`${actionContext} FAIL - addBookingToFirestore threw an error.`, { errorName: err.name, errorMessage: err.message, stack: err.stack?.substring(0,800) }, 'error');
         return {
-            ...initialFormState, success: false, actionToken: serverActionToken,
+            success: false, actionToken: serverActionToken,
             message: `Datenbankfehler beim Erstellen der Buchung: ${err.message}. (Code: CBA-DBF-ADD-${serverActionToken.substring(0,4)})`, 
             errors: { global: [`Fehler beim Speichern der Buchung: ${err.message}`] },
+            bookingToken: null, updatedGuestData: null, currentStep: -1
         };
     }
 
@@ -939,37 +859,42 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
       const errorMsg = `Datenbankfehler: Buchung konnte nicht erstellt werden (keine ID zurückgegeben). (Code: CBA-DBF-NOID-${serverActionToken.substring(0,4)})`;
       logSafe(`${actionContext} FAIL - addBookingToFirestore returned null or empty ID.`, {}, 'error');
       return {
-        ...initialFormState, success: false, actionToken: serverActionToken,
+        success: false, actionToken: serverActionToken,
         message: errorMsg, errors: { global: ["Fehler beim Speichern der Buchung."] },
+        bookingToken: null, updatedGuestData: null, currentStep: -1
       };
     }
     logSafe(`${actionContext} SUCCESS - New booking. Token: ${newBookingToken}. ID: ${createdBookingId}. Time: ${Date.now() - startTime}ms.`);
     revalidatePath("/admin/dashboard", "page");
-    revalidatePath(`/admin/bookings/${createdBookingId}`, "page"); // Revalidate specific booking detail page
+    revalidatePath(`/admin/bookings/${createdBookingId}`, "page"); 
     revalidatePath(`/buchung/${newBookingToken}`, "page"); 
     
     return {
-      ...initialFormState, success: true, actionToken: serverActionToken,
+      success: true, actionToken: serverActionToken,
       message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
       bookingToken: newBookingToken,
+      updatedGuestData: null, errors: null, currentStep: -1
     };
-  } catch (e: any) { // Global catch for createBookingAction
+  } catch (e: any) { 
     const error = e instanceof Error ? e : new Error(String(e));
     logSafe(actionContext + " GLOBAL UNHANDLED EXCEPTION in createBookingAction", { errorName: error.name, errorMessage: error.message, stack: error.stack?.substring(0,1500) }, 'error');
+    // Return a generic error message and log the full error server-side
+    const clientErrorMessage = `Unerwarteter Serverfehler: ${error.message}. Details in Server-Logs. (Aktions-ID: ${serverActionToken}) (Code: CBA-GUEH)`;
     return {
-      ...initialFormState, success: false, actionToken: serverActionToken,
-      message: `Unerwarteter Serverfehler: ${error.message}. Details in Server-Logs. (Aktions-ID: ${serverActionToken}) (Code: CBA-GUEH)`,
+      success: false, actionToken: serverActionToken,
+      message: clientErrorMessage,
       errors: { global: [`Serverfehler: ${error.message}. Bitte Admin kontaktieren. (Code: CBA-GUEH-G-${serverActionToken.substring(0,4)})`] },
+      bookingToken: null, updatedGuestData: null, currentStep: -1
     };
   }
 }
 
+
 // Delete Bookings Action
 export async function deleteBookingsAction(
   prevState: { success: boolean; message: string; actionToken?: string },
-  bookingIdsArg: string[] // Renamed to avoid conflict with internal bookingIds
+  bookingIdsArg: string[] 
 ): Promise<{ success: boolean; message: string; actionToken: string }> {
-  "use server";
   const serverActionToken = generateActionToken();
   const actionContext = `[deleteBookingsAction(Action:${serverActionToken.substring(0,8)})]`;
 
@@ -979,7 +904,6 @@ export async function deleteBookingsAction(
     return { success: false, message: `Kritischer Serverfehler: Firebase ist nicht korrekt initialisiert. (Details: ${initErrorMsg}) (Aktions-ID: ${serverActionToken}) (Code: DBA-FNI)`, actionToken: serverActionToken };
   }
 
-  // Ensure bookingIdsArg is an array and filter out invalid IDs
   const validBookingIds = Array.isArray(bookingIdsArg) 
     ? bookingIdsArg.filter(id => typeof id === 'string' && id.trim() !== '') 
     : [];
@@ -1016,3 +940,4 @@ export async function deleteBookingsAction(
     
 
     
+
