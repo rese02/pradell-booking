@@ -1,5 +1,8 @@
 
+"use client"; // Hinzugefügt, da usePathname clientseitig ist
+
 import type { ReactNode } from 'react';
+import { usePathname } from 'next/navigation'; // Importiert für Pfadabfrage
 import {
   SidebarProvider,
   Sidebar,
@@ -17,6 +20,15 @@ import { Settings } from 'lucide-react';
 import { PradellLogo } from '@/components/shared/PradellLogo'; // Import PradellLogo
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+
+  // Wenn der aktuelle Pfad die Admin-Login-Seite ist,
+  // rendere nur die Kinder (die Login-Seite selbst) ohne das Admin-Layout.
+  if (pathname === '/admin/login') {
+    return <>{children}</>;
+  }
+
+  // Andernfalls, rendere das volle Admin-Layout mit Sidebar und Header.
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar variant="sidebar" collapsible="icon" side="left" className="border-r border-border/50 shadow-md">
