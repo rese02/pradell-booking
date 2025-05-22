@@ -8,7 +8,7 @@ import { LogInIcon as ArrivalIcon, LogOutIcon as DepartureIcon, PlusCircleIcon a
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getBookingsFromFirestore } from "@/lib/mock-db"; 
 import { Separator } from "@/components/ui/separator";
-import { cn } from "@/lib/utils"; // Added missing import
+import { cn } from "@/lib/utils";
 
 async function fetchBookings(): Promise<Booking[]> {
   const operationName = "[AdminDashboardPage fetchBookings]";
@@ -19,7 +19,7 @@ async function fetchBookings(): Promise<Booking[]> {
     return bookings;
   } catch (error) {
     console.error(`${operationName} Error in fetchBookings:`, error);
-    throw error;
+    throw error; // Re-throw to be caught by the page component
   }
 }
 
@@ -41,7 +41,6 @@ async function getDashboardStats(bookings: Booking[]) {
   const totalConfirmedBookings = bookings.filter(b => b.status === "Confirmed").length;
   
   const totalPendingBookings = bookings.filter(b => b.status === "Pending Guest Information").length;
-
 
   return {
     upcomingCheckIns,
@@ -109,18 +108,18 @@ export default async function AdminDashboardPage() {
         fetchError = `Fehler beim Laden der Buchungsdaten: Die Verbindung zur Firestore-Datenbank konnte nicht hergestellt werden.
                       Ursache: ${error.message}. Bitte stellen Sie sicher, dass Firebase korrekt konfiguriert ist (insbesondere die .env.local Datei und die Projekt-ID)
                       und dass die Firestore-Dienste (Firestore Database und Cloud Firestore API) in der Firebase/Google Cloud Konsole für Ihr Projekt aktiviert und eine Datenbank-Instanz erstellt wurde.
-                      Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen.`;
+                      Überprüfen Sie die Server-Logs für detaillierte Initialisierungs-Informationen. (Code: ADP-FNI)`;
     } else if (error.message.toLowerCase().includes("missing or insufficient permissions")) {
         fetchError = `Fehler beim Laden der Buchungsdaten: Fehlende oder unzureichende Berechtigungen für Firestore.
                       Bitte überprüfen Sie Ihre Firebase Firestore Sicherheitsregeln in der Firebase Konsole.
-                      Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message})`;
+                      Stellen Sie sicher, dass Lesezugriff für die 'bookings'-Collection erlaubt ist. (Fehlermeldung: ${error.message}) (Code: ADP-FPERM)`;
     } else if (error.message.toLowerCase().includes("query requires an index")) {
         fetchError = `Fehler beim Laden der Buchungsdaten: Eine benötigte Index-Konfiguration für Firestore fehlt.
                       Bitte überprüfen Sie die Firebase Konsole (Firestore > Indizes). Firestore könnte dort vorschlagen, den Index zu erstellen.
-                      (Fehlermeldung: ${error.message})`;
+                      (Fehlermeldung: ${error.message}) (Code: ADP-FINDE)`;
     }
      else {
-        fetchError = `Unbekannter Fehler beim Laden der Buchungsdaten: ${error.message}. Bitte überprüfen Sie die Server-Konfiguration und -Logs.`;
+        fetchError = `Unbekannter Fehler beim Laden der Buchungsdaten: ${error.message}. Bitte überprüfen Sie die Server-Konfiguration und -Logs. (Code: ADP-UNK)`;
     }
   }
 
@@ -197,9 +196,6 @@ export default async function AdminDashboardPage() {
                 Details ansehen und Buchungen verwalten.
               </CardDescription>
             </div>
-            {/* <Button variant="outline" size="sm">
-                <ListFilter className="mr-2 h-4 w-4" /> Buchungen filtern
-            </Button> */}
           </CardHeader>
           <Separator />
           <CardContent className="p-0 sm:p-2 md:p-4">
@@ -229,6 +225,5 @@ export default async function AdminDashboardPage() {
     </TooltipProvider>
   );
 }
-    
 
     
