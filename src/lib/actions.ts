@@ -61,14 +61,13 @@ function generateActionToken() {
 
 function convertTimestampsInGuestData(data?: GuestSubmittedData | null): GuestSubmittedData | null | undefined {
   if (!data) return data;
-  const newGuestData: GuestSubmittedData = JSON.parse(JSON.stringify(data)); // Deep copy to avoid mutating original
+  const newGuestData: GuestSubmittedData = JSON.parse(JSON.stringify(data)); 
 
   const processTimestampField = (obj: any, field: string) => {
     if (obj && typeof obj[field] !== 'undefined' && obj[field] !== null) {
       if (obj[field] instanceof Timestamp) { 
         obj[field] = obj[field].toDate().toISOString();
       } else if (typeof obj[field] === 'object' && 'seconds' in obj[field] && 'nanoseconds' in obj[field]) {
-        // Handle Firestore Timestamp-like objects that might not be instances
         obj[field] = new Timestamp(obj[field].seconds, obj[field].nanoseconds).toDate().toISOString();
       } else if (obj[field] instanceof Date) {
         obj[field] = obj[field].toISOString();
@@ -76,14 +75,12 @@ function convertTimestampsInGuestData(data?: GuestSubmittedData | null): GuestSu
     }
   };
 
-  // Fields within GuestSubmittedData that are dates
   const dateFieldsInGuestData: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
   for (const field of dateFieldsInGuestData) {
     processTimestampField(newGuestData, field as string);
   }
   return newGuestData;
 }
-
 
 const MAX_FILE_SIZE_MB = 10;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
@@ -162,8 +159,7 @@ async function updateBookingStep(
     if (additionalDataToMerge) {
         updatedGuestData = { ...updatedGuestData, ...additionalDataToMerge };
     }
-    // Merge validated form data into guest data
-    // Exclude file fields here, they are handled separately below
+    
     const formKeys = Object.keys(dataFromForm);
     for (const key of formKeys) {
         if (!(dataFromForm[key] instanceof File)) {
@@ -171,7 +167,6 @@ async function updateBookingStep(
         }
     }
     
-    // Define which form fields correspond to which GuestSubmittedData/Mitreisender URL properties
     const fileFieldsConfig: Array<{
       formDataKey: string; 
       guestDataUrlKey?: keyof Pick<GuestSubmittedData, 'hauptgastAusweisVorderseiteUrl' | 'hauptgastAusweisRückseiteUrl' | 'zahlungsbelegUrl'>;
@@ -179,7 +174,6 @@ async function updateBookingStep(
       mitreisenderUrlKey?: keyof Pick<MitreisenderData, 'ausweisVorderseiteUrl' | 'ausweisRückseiteUrl'>;
     }> = [];
 
-    // Configure file fields based on step
     if (stepName === "Hauptgast & Ausweis") {
         fileFieldsConfig.push(
             { formDataKey: 'hauptgastAusweisVorderseiteFile', guestDataUrlKey: 'hauptgastAusweisVorderseiteUrl' },
@@ -254,7 +248,6 @@ async function updateBookingStep(
               logSafe(`${actionContext} WARN: Old file for ${config.formDataKey} not found in Storage, skipping deletion. URL: ${oldFileUrl}`, {}, 'warn');
             } else {
               logSafe(`${actionContext} WARN: Failed to delete OLD file for ${config.formDataKey} from Storage. URL: ${oldFileUrl}. Code: ${fbErrorCode}`, { errorName: err.name, errorMessage: err.message, code: fbErrorCode }, 'warn');
-              // Do not add to formErrors, as this is not a blocking error for the new upload
             }
           }
         }
@@ -307,14 +300,12 @@ async function updateBookingStep(
         }
       } else if (file instanceof File && file.size === 0 && rawFormData[config.formDataKey]) {
            logSafe(`${actionContext} File field ${config.formDataKey} submitted empty/cleared. Old URL was: ${oldFileUrl ? String(oldFileUrl).substring(0, 80) + '...' : 'N/A'}`);
-           // Clear the URL in updatedGuestData
            if (config.mitreisenderId && config.mitreisenderUrlKey && updatedGuestData.mitreisende) {
                 let companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
                 if (companion) { (companion as any)[config.mitreisenderUrlKey] = undefined; }
            } else if (config.guestDataUrlKey) {
                 (updatedGuestData as any)[config.guestDataUrlKey] = undefined;
            }
-           // Delete the old file from storage if it existed
            if (oldFileUrl && typeof oldFileUrl === 'string' && oldFileUrl.startsWith("https://firebasestorage.googleapis.com")) {
              try {
                logSafe(`${actionContext} Attempting to delete OLD file from Storage due to empty submission for ${config.formDataKey}: ${oldFileUrl}`);
@@ -332,7 +323,6 @@ async function updateBookingStep(
              }
            }
       } else if (oldFileUrl && typeof oldFileUrl === 'string') { 
-          // Retain old URL if no new file and old URL exists
           if (config.mitreisenderId && config.mitreisenderUrlKey && updatedGuestData.mitreisende) {
               const companion = updatedGuestData.mitreisende.find(m => m.id === config.mitreisenderId);
               if (companion && !(companion as any)[config.mitreisenderUrlKey]) { (companion as any)[config.mitreisenderUrlKey] = oldFileUrl; }
@@ -388,7 +378,7 @@ async function updateBookingStep(
     logSafe(`${actionContext} Updated lastCompletedStep to: ${updatedGuestData.lastCompletedStep}`);
 
     let bookingStatusUpdate: Partial<Booking> = {};
-    if (stepName === "Bestätigung") { // Assuming step 5 is "Bestätigung"
+    if (stepName === "Bestätigung") { 
       const agbAkzeptiert = dataFromForm.agbAkzeptiert === true;
       const datenschutzAkzeptiert = dataFromForm.datenschutzAkzeptiert === true;
 
@@ -419,7 +409,6 @@ async function updateBookingStep(
         ...(bookingStatusUpdate.status && { status: bookingStatusUpdate.status })
     };
     
-    // If main guest name is updated in step 1, update it on the booking level too
     if (stepName === "Hauptgast & Ausweis" && dataFromForm.gastVorname && dataFromForm.gastNachname && bookingDoc) {
         if(bookingDoc.guestFirstName !== dataFromForm.gastVorname || bookingDoc.guestLastName !== dataFromForm.gastNachname) {
             bookingUpdatesFirestore.guestFirstName = dataFromForm.gastVorname as string;
@@ -466,13 +455,9 @@ async function updateBookingStep(
 }
 
 
-// Schemas für die einzelnen Schritte des Gästebuchungsformulars
 const gastStammdatenSchema = z.object({
-  anrede: z.enum(['Herr', 'Frau', 'Divers'], {errorMap: () => ({message: "Anrede ist erforderlich."})}).optional(), // Wird im Stepper validiert, hier optional falls es mal fehlt
   gastVorname: z.string().min(1, "Vorname ist erforderlich."),
   gastNachname: z.string().min(1, "Nachname ist erforderlich."),
-  geburtsdatum: z.string().optional().nullable()
-    .refine(val => !val || /^\d{4}-\d{2}-\d{2}$/.test(val), { message: "Geburtsdatum muss im Format YYYY-MM-DD sein oder leer."}),
   email: z.string().email("Ungültige E-Mail-Adresse.").min(1, "E-Mail ist erforderlich."),
   telefon: z.string().min(1, "Telefonnummer ist erforderlich."),
   alterHauptgast: z.string().optional().nullable()
@@ -679,8 +664,12 @@ const createBookingServerSchema = z.object({
   guestFirstName: z.string({required_error: "Vorname ist ein Pflichtfeld."}).min(1, "Vorname ist erforderlich."),
   guestLastName: z.string({required_error: "Nachname ist ein Pflichtfeld."}).min(1, "Nachname ist erforderlich."),
   price: z.coerce.number({invalid_type_error: "Preis muss eine Zahl sein.", required_error: "Preis ist ein Pflichtfeld."}).positive("Preis muss eine positive Zahl sein."),
-  checkInDate: z.string({required_error: "Anreisedatum ist ein Pflichtfeld."}).min(1, "Anreisedatum ist erforderlich.").refine(val => !isNaN(Date.parse(val)), { message: "Ungültiges Anreisedatum." }),
-  checkOutDate: z.string({required_error: "Abreisedatum ist ein Pflichtfeld."}).min(1, "Abreisedatum ist erforderlich.").refine(val => !isNaN(Date.parse(val)), { message: "Ungültiges Abreisedatum." }),
+  checkInDate: z.string({required_error: "Anreisedatum ist ein Pflichtfeld."})
+    .min(1, "Anreisedatum ist erforderlich.")
+    .refine(val => !isNaN(Date.parse(val)), { message: "Ungültiges Anreisedatum." }),
+  checkOutDate: z.string({required_error: "Abreisedatum ist ein Pflichtfeld."})
+    .min(1, "Abreisedatum ist erforderlich.")
+    .refine(val => !isNaN(Date.parse(val)), { message: "Ungültiges Abreisedatum." }),
   verpflegung: z.string({required_error: "Verpflegung ist ein Pflichtfeld."}).min(1, "Verpflegung ist erforderlich.").default('ohne'),
   interneBemerkungen: z.string().optional().default(''),
   roomsData: z.string({ required_error: "Zimmerdaten sind erforderlich." })
@@ -707,7 +696,7 @@ const createBookingServerSchema = z.object({
   if (data.checkInDate && data.checkOutDate) {
     try {
         return new Date(data.checkOutDate) > new Date(data.checkInDate);
-    } catch (e) { return false; } // Invalid date format would cause error here
+    } catch (e) { return false; } 
   }
   return true;
 }, {
@@ -733,8 +722,9 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
   }
   
   try {
+    console.log("Incoming FormData keys in createBookingAction:", Array.from(formData.keys()));
+
     const rawFormData: {[k: string]: any} = {};
-    // Explicitly get expected fields to avoid issues with unexpected FormData entries
     const expectedFields = ["guestFirstName", "guestLastName", "price", "checkInDate", "checkOutDate", "verpflegung", "interneBemerkungen", "roomsData"];
     for (const key of formData.keys()) {
         if (expectedFields.includes(key)) {
@@ -742,7 +732,38 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
         }
     }
 
-    logSafe(actionContext + " Raw form data prepared for Zod validation:", {
+    // Defensive pre-checks
+    const checkInDateStr = rawFormData.checkInDate as string | undefined;
+    const checkOutDateStr = rawFormData.checkOutDate as string | undefined;
+    const rawRoomsDataStr = rawFormData.roomsData as string | undefined;
+
+    if (!checkInDateStr || typeof checkInDateStr !== 'string' || checkInDateStr.trim() === '') {
+        logSafe(`${actionContext} Validation FAIL - checkInDate missing or not a string.`, { checkInDateStr }, 'warn');
+        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Anreisedatum ist erforderlich oder ungültig. (Code: CBA-PREZOD-CID)", errors: {checkInDate: ["Anreisedatum ist erforderlich."]}};
+    }
+    if (!checkOutDateStr || typeof checkOutDateStr !== 'string' || checkOutDateStr.trim() === '') {
+        logSafe(`${actionContext} Validation FAIL - checkOutDate missing or not a string.`, { checkOutDateStr }, 'warn');
+        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Abreisedatum ist erforderlich oder ungültig. (Code: CBA-PREZOD-COD)", errors: {checkOutDate: ["Abreisedatum ist erforderlich."]}};
+    }
+    if (!rawRoomsDataStr || typeof rawRoomsDataStr !== 'string' || rawRoomsDataStr.trim() === '') {
+        logSafe(`${actionContext} Validation FAIL - roomsData missing, not a string, or empty string.`, { rawRoomsDataStr }, 'warn');
+        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Zimmerdaten sind erforderlich oder ungültig. (Code: CBA-PREZOD-RD-STR)", errors: {roomsData: ["Zimmerdaten sind erforderlich."]}};
+    }
+
+    let parsedRooms;
+    try {
+        parsedRooms = JSON.parse(rawRoomsDataStr);
+    } catch (e) {
+        logSafe(`${actionContext} Validation FAIL - roomsData is not valid JSON.`, { rawRoomsDataStr, error: e instanceof Error ? e.message : String(e) }, 'warn');
+        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Zimmerdaten sind kein gültiges JSON. (Code: CBA-PREZOD-RD-JSON)", errors: {roomsData: ["Ungültiges Format der Zimmerdaten."]}};
+    }
+
+    if (!Array.isArray(parsedRooms) || parsedRooms.length === 0) {
+        logSafe(`${actionContext} Validation FAIL - roomsData (parsed) is not an array or is empty.`, { parsedRooms }, 'warn');
+        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Mindestens ein Zimmer muss hinzugefügt werden. (Code: CBA-PREZOD-RD-EMPTYARR)", errors: {roomsData: ["Mindestens ein Zimmer ist erforderlich."]}};
+    }
+
+    logSafe(actionContext + " Raw form data prepared for Zod validation (after pre-checks):", {
         guestFirstName: rawFormData.guestFirstName,
         guestLastName: rawFormData.guestLastName,
         price: rawFormData.price,
@@ -750,29 +771,8 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
         checkOutDate: rawFormData.checkOutDate,
         verpflegung: rawFormData.verpflegung,
         interneBemerkungenLength: typeof rawFormData.interneBemerkungen === 'string' ? rawFormData.interneBemerkungen.length : 'N/A',
-        roomsDataIsString: typeof rawFormData.roomsData === 'string',
         roomsDataLength: typeof rawFormData.roomsData === 'string' ? rawFormData.roomsData.length : 'N/A',
     });
-
-    // Defensive checks before Zod
-    if (typeof rawFormData.checkInDate !== 'string' || !rawFormData.checkInDate) {
-         return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Anreisedatum fehlt oder ist ungültig. (Code: CBA-PREZOD-CID)", errors: {checkInDate: ["Anreisedatum ist erforderlich."]}};
-    }
-    if (typeof rawFormData.checkOutDate !== 'string' || !rawFormData.checkOutDate) {
-         return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Abreisedatum fehlt oder ist ungültig. (Code: CBA-PREZOD-COD)", errors: {checkOutDate: ["Abreisedatum ist erforderlich."]}};
-    }
-    if (typeof rawFormData.roomsData !== 'string' || !rawFormData.roomsData) {
-        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Zimmerdaten fehlen oder sind ungültig. (Code: CBA-PREZOD-RD)", errors: {roomsData: ["Zimmerdaten sind erforderlich."]}};
-    }
-    try {
-        const parsedRooms = JSON.parse(rawFormData.roomsData);
-        if (!Array.isArray(parsedRooms) || parsedRooms.length === 0) {
-            return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Zimmerdaten müssen mindestens ein Zimmer enthalten. (Code: CBA-PREZOD-RD-EMPTY)", errors: {roomsData: ["Mindestens ein Zimmer ist erforderlich."]}};
-        }
-    } catch (e) {
-        return { ...initialFormState, success: false, actionToken: serverActionToken, message: "Zimmerdaten sind kein gültiges JSON. (Code: CBA-PREZOD-RD-JSON)", errors: {roomsData: ["Ungültiges Format der Zimmerdaten."]}};
-    }
-
 
     const validatedFields = createBookingServerSchema.safeParse(rawFormData);
 
@@ -800,37 +800,36 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
     }
 
     const bookingData = validatedFields.data;
-    logSafe(actionContext + " Zod Validation SUCCESSFUL. Validated bookingData (types and values):", {
+    logSafe(actionContext + " Zod Validation SUCCESSFUL. Validated bookingData types and values:", {
       guestFirstName: `${typeof bookingData.guestFirstName} - "${bookingData.guestFirstName}"`,
       guestLastName: `${typeof bookingData.guestLastName} - "${bookingData.guestLastName}"`,
       price: `${typeof bookingData.price} - ${bookingData.price}`,
-      checkInDate: `${typeof bookingData.checkInDate} - "${bookingData.checkInDate}"`, // Should be string
-      checkOutDate: `${typeof bookingData.checkOutDate} - "${bookingData.checkOutDate}"`, // Should be string
+      checkInDate: `${typeof bookingData.checkInDate} - "${bookingData.checkInDate}"`,
+      checkOutDate: `${typeof bookingData.checkOutDate} - "${bookingData.checkOutDate}"`,
       verpflegung: `${typeof bookingData.verpflegung} - "${bookingData.verpflegung}"`,
-      interneBemerkungen: `${typeof bookingData.interneBemerkungen} - "${bookingData.interneBemerkungen}"`,
+      interneBemerkungen: `${typeof bookingData.interneBemerkungen} - "${String(bookingData.interneBemerkungen || '')}"`,
       roomsDataIsArray: Array.isArray(bookingData.roomsData),
       roomsDataLength: Array.isArray(bookingData.roomsData) ? bookingData.roomsData.length : 'N/A',
     });
-     if (Array.isArray(bookingData.roomsData)) {
-        bookingData.roomsData.forEach((room, index) => {
-            logSafe(actionContext + ` Room ${index} details:`, {
-                zimmertyp: `${typeof room.zimmertyp} - "${room.zimmertyp}"`,
-                erwachsene: `${typeof room.erwachsene} - ${room.erwachsene}`,
-                kinder: `${typeof room.kinder} - ${room.kinder}`,
-                kleinkinder: `${typeof room.kleinkinder} - ${room.kleinkinder}`,
-                alterKinder: `${typeof room.alterKinder} - "${room.alterKinder}"`,
-            });
-        });
-    }
 
-    if (!Array.isArray(bookingData.roomsData) || bookingData.roomsData.length === 0) {
-        const errMsg = "Fehler: Keine gültigen Zimmerdaten gefunden nach Zod. Mindestens ein Zimmer ist erforderlich.";
-        logSafe(actionContext + " FAIL - bookingData.roomsData is not a valid array or is empty after Zod parsing.", { roomsData: bookingData.roomsData }, 'error');
+     if (!Array.isArray(bookingData.roomsData) || bookingData.roomsData.length === 0) {
+        const errMsg = "Fehler: Nach Zod-Validierung sind keine gültigen Zimmerdaten vorhanden. Mindestens ein Zimmer ist erforderlich.";
+        logSafe(actionContext + " FAIL - bookingData.roomsData is not a valid array or is empty AFTER Zod parsing.", { roomsData: bookingData.roomsData }, 'error');
         return {
             ...initialFormState, success: false, actionToken: serverActionToken,
             message: errMsg + ` (Code: CBA-RD-POST-ZOD-EMPTY-${serverActionToken.substring(0,4)})`, errors: { roomsData: [errMsg] },
         };
     }
+    
+    bookingData.roomsData.forEach((room, index) => {
+        logSafe(actionContext + ` Validated Room ${index} details:`, {
+            zimmertyp: `${typeof room.zimmertyp} - "${String(room.zimmertyp || 'Standard')}"`,
+            erwachsene: `${typeof room.erwachsene} - ${Number(room.erwachsene || 0)}`,
+            kinder: `${typeof room.kinder} - ${Number(room.kinder || 0)}`,
+            kleinkinder: `${typeof room.kleinkinder} - ${Number(room.kleinkinder || 0)}`,
+            alterKinder: `${typeof room.alterKinder} - "${String(room.alterKinder || '')}"`,
+        });
+    });
     
     const firstRoom = bookingData.roomsData[0];
     const zimmertypForIdentifier = String(firstRoom.zimmertyp || 'Standard');
@@ -854,8 +853,8 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
       guestFirstName: bookingData.guestFirstName,
       guestLastName: bookingData.guestLastName,
       price: bookingData.price,
-      checkInDate: new Date(bookingData.checkInDate), // Convert string to Date for Firestore
-      checkOutDate: new Date(bookingData.checkOutDate), // Convert string to Date for Firestore
+      checkInDate: new Date(bookingData.checkInDate), 
+      checkOutDate: new Date(bookingData.checkOutDate), 
       bookingToken: newBookingToken,
       status: "Pending Guest Information", 
       verpflegung: String(bookingData.verpflegung || 'ohne'),
@@ -867,8 +866,8 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
     
     logSafe(actionContext + " Attempting to add booking to Firestore. Payload (first room details for brevity):", {
         ...newBookingPayload,
-        checkInDate: newBookingPayload.checkInDate?.toISOString(), // Log as ISO string
-        checkOutDate: newBookingPayload.checkOutDate?.toISOString(), // Log as ISO string
+        checkInDate: newBookingPayload.checkInDate?.toISOString(), 
+        checkOutDate: newBookingPayload.checkOutDate?.toISOString(), 
         rooms: newBookingPayload.rooms ? [newBookingPayload.rooms[0]] : "No rooms in payload (should not happen)", 
     });
     
@@ -900,7 +899,7 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
     
     return {
       ...initialFormState, success: true, actionToken: serverActionToken,
-      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Gast-Link: /buchung/${newBookingToken}`,
+      message: `Buchung für ${bookingData.guestFirstName} ${bookingData.guestLastName} erstellt. Token: ${newBookingToken}`,
       bookingToken: newBookingToken,
     };
   } catch (e: any) {
@@ -915,7 +914,8 @@ export async function createBookingAction(prevState: FormState, formData: FormDa
 }
 
 export async function deleteBookingsAction(
-  prevState: { success: boolean; message: string; actionToken?: string }, 
+  // prevState: FormState, // Signature requires prevState, but it's not actively used here for its values
+  initialPrevState: { success: boolean; message: string; actionToken?: string | undefined },
   bookingIds: string[]
 ): Promise<{ success: boolean; message: string; actionToken: string }> {
   const serverActionToken = generateActionToken();
@@ -927,13 +927,13 @@ export async function deleteBookingsAction(
     return { success: false, message: `Kritischer Serverfehler: Firebase ist nicht korrekt initialisiert. (Details: ${initErrorMsg}) (Aktions-ID: ${serverActionToken}) (Code: DBA-FNI)`, actionToken: serverActionToken };
   }
 
-  // Ensure bookingIds is an array before filtering
+  // Filter out any non-string or empty string IDs
   const validBookingIds = Array.isArray(bookingIds) ? bookingIds.filter(id => typeof id === 'string' && id.trim() !== '') : [];
   
   logSafe(actionContext + " BEGIN", { receivedCount: Array.isArray(bookingIds) ? bookingIds.length : 'N/A', validCount: validBookingIds.length, idsToProcess: validBookingIds });
 
   if (validBookingIds.length === 0) {
-    logSafe(`${actionContext} No valid booking IDs provided for deletion after filtering. Original input:`, { bookingIds }, 'warn');
+    logSafe(`${actionContext} No valid booking IDs provided for deletion. Original input:`, { bookingIds }, 'warn');
     return { success: false, message: "Keine gültigen Buchungs-IDs zum Löschen angegeben. (Code: DBA-NVID)", actionToken: serverActionToken };
   }
 
@@ -952,3 +952,5 @@ export async function deleteBookingsAction(
     return { success: false, message: `Unerwarteter Serverfehler beim Löschen: ${error.message}. Details in Server-Logs. (Aktions-ID: ${serverActionToken}) (Code: DBA-GUEH)`, actionToken: serverActionToken };
   }
 }
+    
+    
