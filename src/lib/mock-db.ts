@@ -1,6 +1,6 @@
 
 // src/lib/mock-db.ts
-import type { Booking, GuestSubmittedData } from "@/lib/definitions";
+import type { Booking, GuestSubmittedData, Mitreisender } from "@/lib/definitions";
 import { db, firebaseInitializedCorrectly, storage, firebaseInitializationError } from "./firebase";
 import {
   collection,
@@ -20,12 +20,24 @@ import {
   type DocumentSnapshot,
   runTransaction
 } from "firebase/firestore";
-import { ref as storageRefFB, deleteObject } from "firebase/storage";
+import { ref as storageRefFB, deleteObject, getBlob } from "firebase/storage"; // Added getBlob for potential future use
 
-function logSafeDB(context: string, data: any, level: 'info' | 'warn' | 'error' = 'info') {
-    const operationName = "[FirestoreDB LogSafe]";
+// Centralized logging function for this module
+function logDb(context: string, data: any, level: 'info' | 'warn' | 'error' = 'info') {
+    const operationName = "[FirestoreDB]";
     // Simplified logging for brevity, adapt as needed
-    const logMessage = `${operationName} [${new Date().toISOString()}] ${context} ${JSON.stringify(data, null, 2).substring(0,1000)}`;
+    let simplifiedData = "";
+    try {
+        simplifiedData = JSON.stringify(data, (key, value) => {
+             if (value instanceof Error) { return { message: value.message, name: value.name, code: (value as any).code }; }
+             if (typeof value === 'string' && value.length > 150 && !key.toLowerCase().includes('url')) { return value.substring(0,100) + "...[TRUNCATED_STRING_LOG]"; }
+             return value;
+        }, 2).substring(0, 1500); // Limit overall log length
+    } catch (e) {
+        simplifiedData = "[Log data could not be stringified]";
+    }
+
+    const logMessage = `${operationName} [${new Date().toISOString()}] ${context} ${simplifiedData}`;
     if (level === 'error') console.error(logMessage);
     else if (level === 'warn') console.warn(logMessage);
     else console.log(logMessage);
@@ -39,7 +51,7 @@ export function convertTimestampsToISO(bookingData: any): any {
   try {
     newBookingData = JSON.parse(JSON.stringify(bookingData)); 
   } catch (e) {
-    console.error("[convertTimestampsToISO] Error deep cloning bookingData:", e, bookingData);
+    logDb("[convertTimestampsToISO] Error deep cloning bookingData:", { message: (e as Error).message, bookingDataPreview: String(bookingData).substring(0,100) }, 'error');
     return bookingData; 
   }
 
@@ -51,7 +63,7 @@ export function convertTimestampsToISO(bookingData: any): any {
             try {
                 obj[field] = new Timestamp(obj[field].seconds, obj[field].nanoseconds).toDate().toISOString();
             } catch (tsError) {
-                console.warn(`[convertTimestampsToISO] Error converting pseudo-Timestamp object for field ${field}:`, tsError, obj[field]);
+                logDb(`[convertTimestampsToISO] Error converting pseudo-Timestamp object for field ${field}:`, { error: (tsError as Error).message, value: obj[field] }, 'warn');
             }
         } else if (obj[field] instanceof Date) {
              obj[field] = obj[field].toISOString();
@@ -63,12 +75,11 @@ export function convertTimestampsToISO(bookingData: any): any {
   bookingDateFields.forEach(field => processField(newBookingData, field as string));
 
   if (newBookingData.guestSubmittedData) {
-    const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
+    const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum']; // Added zahlungsdatum
     guestDataFields.forEach(field => processField(newBookingData.guestSubmittedData, field as string));
     
-    // Convert dates in mitreisende if present
     if (newBookingData.guestSubmittedData.mitreisende && Array.isArray(newBookingData.guestSubmittedData.mitreisende)) {
-        // No date fields currently defined in Mitreisender for conversion
+        // No date fields currently defined in Mitreisender for conversion in the provided definitions
     }
   }
   return newBookingData;
@@ -86,14 +97,6 @@ function convertDatesToTimestamps(data: any): any {
       const dateValue = (typeof obj[field] === 'string' || obj[field] instanceof Date) ? new Date(obj[field]) : null;
       if (dateValue && !isNaN(dateValue.getTime())) {
         obj[field] = Timestamp.fromDate(dateValue);
-      } else if (obj[field] === '' || obj[field] === null) {
-         // Allow explicit nulls to be set, remove empty strings if they are not intended as valid values for date fields.
-         // For now, if it's an empty string, it won't be converted to Timestamp and might cause issues if Firestore expects a Timestamp or null.
-         // Firestore handles null values correctly for optional date fields.
-         // If an empty string '' is passed for a date field, Firestore might reject it or store it as an empty string.
-         // It's usually better to explicitly set to null if the date is not provided.
-         // For this function, if it's not a valid date string/object, it's left as is.
-         // The Zod schema should ideally ensure dates are valid strings or convert them.
       }
     }
   };
@@ -102,9 +105,8 @@ function convertDatesToTimestamps(data: any): any {
   bookingDateFields.forEach(field => processField(newData, field as string));
 
   if (newData.guestSubmittedData) {
-    const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum'];
+    const guestDataFields: (keyof GuestSubmittedData)[] = ['submittedAt', 'geburtsdatum', 'zahlungsdatum']; // Added zahlungsdatum
     guestDataFields.forEach(field => processField(newData.guestSubmittedData, field as string));
-    // Convert dates in mitreisende if present
   }
   return newData;
 }
@@ -112,34 +114,34 @@ function convertDatesToTimestamps(data: any): any {
 
 export async function getBookingsFromFirestore(): Promise<Booking[]> {
   const operationName = "[getBookingsFromFirestore]";
-  console.log(`${operationName} Attempting to fetch bookings...`);
+  logDb(`${operationName} Attempting to fetch bookings...`, {});
   if (!firebaseInitializedCorrectly || !db) {
     const errorDetail = firebaseInitializationError || "DB instance is null or firebaseInitializedCorrectly is false.";
     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot fetch bookings. Detail: ${errorDetail}`;
-    console.error(errorMessage);
+    console.error(errorMessage); // Keep console.error for FATAL
     throw new Error(errorMessage); 
   }
   try {
     const collectionName = "bookings";
     const bookingsCol = collection(db, collectionName);
     const bookingsQuery = query(bookingsCol, orderBy("createdAt", "desc")); 
-    logSafeDB(`${operationName} Executing Firestore query`, { path: bookingsCol.path, orderBy: "createdAt desc" });
+    logDb(`${operationName} Executing Firestore query`, { path: bookingsCol.path, orderBy: "createdAt desc" });
     const bookingSnapshot: QuerySnapshot<DocumentData> = await getDocs(bookingsQuery);
     const bookingList = bookingSnapshot.docs.map(docSnap =>
       convertTimestampsToISO({ ...docSnap.data(), id: docSnap.id }) as Booking
     );
-    logSafeDB(`${operationName} Successfully fetched bookings`, { count: bookingList.length, collectionName });
+    logDb(`${operationName} Successfully fetched ${bookingList.length} bookings.`, { collectionName });
     return bookingList;
   } catch (error: any) {
-    const baseErrorMsg = `${operationName} Error fetching bookings from Firestore: "${error.message}" (Code: ${error.code || 'N/A'})`;
-    console.error(baseErrorMsg, error.stack?.substring(0, 500));
-    if (String(error.message).toLowerCase().includes("missing or insufficient permissions")) {
+    const fbErrorCode = error.code; // Firebase errors often have a 'code' property
+    const baseErrorMsg = `${operationName} Error fetching bookings from Firestore: "${error.message}" (Code: ${fbErrorCode || 'N/A'})`;
+    console.error(baseErrorMsg, error.stack?.substring(0, 500)); // Keep console.error for actual errors
+    if (String(error.message).toLowerCase().includes("missing or insufficient permissions") || fbErrorCode === 'permission-denied') {
         const permissionErrorMsg = `${baseErrorMsg} "FirebaseError: Missing or insufficient permissions." Check Firebase Firestore security rules.`;
-        console.error(permissionErrorMsg);
         throw new Error(permissionErrorMsg);
-    } else if (String(error.message).toLowerCase().includes("query requires an index")) {
+    } else if (String(error.message).toLowerCase().includes("query requires an index") || fbErrorCode === 'failed-precondition') {
+        // 'failed-precondition' is often the code for a missing index
         const indexErrorMsg = `${baseErrorMsg} Query requires an index (likely on 'createdAt'). Firestore may suggest creating one in the Firebase Console or server logs.`;
-        console.error(indexErrorMsg);
         throw new Error(indexErrorMsg);
     }
     throw new Error(baseErrorMsg);
@@ -148,7 +150,7 @@ export async function getBookingsFromFirestore(): Promise<Booking[]> {
 
 export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>): Promise<string | null> {
   const operationName = "[addBookingToFirestore]";
-  logSafeDB(`${operationName} Attempting to add booking`, { dataKeys: Object.keys(bookingData) });
+  logDb(`${operationName} Attempting to add booking`, { dataKeys: Object.keys(bookingData) });
    if (!firebaseInitializedCorrectly || !db) {
     const errorDetail = firebaseInitializationError || "DB instance is null or firebaseInitializedCorrectly is false.";
     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot add booking. Detail: ${errorDetail}`;
@@ -159,18 +161,17 @@ export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'c
     const now = new Date();
     const dataToSave = convertDatesToTimestamps({
       ...bookingData,
-      // Ensure guestSubmittedData is an object, even if empty, for consistency.
-      // If bookingData might not have it, provide a default.
       guestSubmittedData: bookingData.guestSubmittedData || { lastCompletedStep: -1 },
       createdAt: Timestamp.fromDate(now), 
       updatedAt: Timestamp.fromDate(now), 
     });
-    logSafeDB(`${operationName} Adding booking to Firestore. Collection: "bookings".`, { dataKeysToSave: Object.keys(dataToSave) });
+    logDb(`${operationName} Adding booking to Firestore. Collection: "bookings".`, { dataKeysToSave: Object.keys(dataToSave).slice(0,10) }); // Log only first 10 keys
     const docRef = await addDoc(collection(db, "bookings"), dataToSave);
-    logSafeDB(`${operationName} Booking successfully added to Firestore`, { id: docRef.id });
+    logDb(`${operationName} Booking successfully added to Firestore`, { id: docRef.id });
     return docRef.id;
   } catch (error: any) {
-    const errorMessage = `${operationName} Error adding booking to Firestore: "${error.message}" (Code: ${error.code || 'N/A'})`;
+    const fbErrorCode = error.code;
+    const errorMessage = `${operationName} Error adding booking to Firestore: "${error.message}" (Code: ${fbErrorCode || 'N/A'})`;
     console.error(errorMessage, error.stack?.substring(0, 500));
     throw new Error(errorMessage);
   }
@@ -178,7 +179,7 @@ export async function addBookingToFirestore(bookingData: Omit<Booking, 'id' | 'c
 
 export async function findBookingByTokenFromFirestore(token: string): Promise<Booking | null> {
   const operationName = "[findBookingByTokenFromFirestore]";
-  logSafeDB(`${operationName} Attempting to find booking by token`, { token });
+  logDb(`${operationName} Attempting to find booking by token: "${token}"`, {});
   if (!firebaseInitializedCorrectly || !db) {
     const errorDetail = firebaseInitializationError || "DB instance is null or firebaseInitializedCorrectly is false.";
     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot find booking. Token: "${token}". Detail: ${errorDetail}`;
@@ -188,42 +189,42 @@ export async function findBookingByTokenFromFirestore(token: string): Promise<Bo
   
   const collectionName = "bookings";
   const fieldNameToQuery = "bookingToken";
-  logSafeDB(`${operationName} Querying collection "${collectionName}" for field "${fieldNameToQuery}" == "${token}"`, {});
+  logDb(`${operationName} Querying collection "${collectionName}" for field "${fieldNameToQuery}" == "${token}"`, { path: collection(db, collectionName).path });
 
   try {
     const bookingsCol = collection(db, collectionName);
     const q = query(bookingsCol, where(fieldNameToQuery, "==", token));
-    logSafeDB(`${operationName} Executing Firestore query for token: "${token}"`, { path: bookingsCol.path });
+    logDb(`${operationName} Executing Firestore query for token: "${token}" on path: ${bookingsCol.path}`, {});
     const querySnapshot: QuerySnapshot<DocumentData> = await getDocs(q);
-    logSafeDB(`${operationName} Query for token "${token}" executed. Found ${querySnapshot.size} documents.`, {});
+    logDb(`${operationName} Query for token "${token}" executed. Found ${querySnapshot.size} documents.`, {});
 
     if (!querySnapshot.empty) {
       if (querySnapshot.size > 1) {
-        logSafeDB(`${operationName} WARNING: Found ${querySnapshot.size} bookings with the same token "${token}". Returning the first one.`, {}, 'warn');
+        logDb(`${operationName} WARNING: Found ${querySnapshot.size} bookings with the same token "${token}". Returning the first one.`, {}, 'warn');
       }
       const docSnap = querySnapshot.docs[0];
       const booking = convertTimestampsToISO({ ...docSnap.data(), id: docSnap.id }) as Booking;
-      logSafeDB(`${operationName} Successfully found booking with token "${token}"`, { id: booking.id, status: booking.status });
+      logDb(`${operationName} Successfully found booking with token "${token}"`, { id: booking.id, status: booking.status });
       return booking;
     }
-    logSafeDB(`${operationName} Booking with token "${token}" NOT FOUND in Firestore collection '${collectionName}'.`, {}, 'warn');
+    logDb(`${operationName} Booking with token "${token}" NOT FOUND in Firestore collection '${collectionName}'.`, {}, 'warn');
     return null;
   } catch (error: any) {
-    const errorMessage = `${operationName} Error finding booking by token "${token}" in Firestore: "${error.message}" (Code: ${error.code || 'N/A'})`;
+    const fbErrorCode = error.code;
+    const errorMessage = `${operationName} Error finding booking by token "${token}" in Firestore: "${error.message}" (Code: ${fbErrorCode || 'N/A'})`;
     console.error(errorMessage, error.stack?.substring(0, 500));
-    if (String(error.message).toLowerCase().includes("missing or insufficient permissions")) {
-        throw new Error(`Firestore Permission Denied: Cannot read booking with token ${token}. Check Firestore rules. Original error: ${error.message}`);
-    } else if (String(error.message).toLowerCase().includes("query requires an index")) {
-        // This error usually appears in the Firebase console or server logs directly if an index is needed
-        throw new Error(`Firestore Index Missing: Query for booking token ${token} requires an index on 'bookingToken'. Check Firebase console. Original error: ${error.message}`);
+    if (fbErrorCode === 'permission-denied') {
+        throw new Error(`Firestore Permission Denied: Cannot read booking with token ${token}. Check Firestore rules. Original error: ${error.message} (Code: ${fbErrorCode})`);
+    } else if (fbErrorCode === 'failed-precondition') {
+        throw new Error(`Firestore Query Error (likely Index Missing): Query for booking token ${token} requires an index or has other issues. Check Firebase console. Original error: ${error.message} (Code: ${fbErrorCode})`);
     }
-    throw new Error(errorMessage);
+    throw new Error(errorMessage); // Generic fallback
   }
 }
 
 export async function findBookingByIdFromFirestore(id: string): Promise<Booking | null> {
   const operationName = "[findBookingByIdFromFirestore]";
-  logSafeDB(`${operationName} Attempting to find booking by ID`, { id });
+  logDb(`${operationName} Attempting to find booking by ID: "${id}"`, {});
   if (!firebaseInitializedCorrectly || !db) {
      const errorDetail = firebaseInitializationError || "DB instance is null or firebaseInitializedCorrectly is false.";
      const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot find booking by ID. ID: "${id}". Detail: ${errorDetail}`;
@@ -232,29 +233,33 @@ export async function findBookingByIdFromFirestore(id: string): Promise<Booking 
   }
   try {
     if (typeof id !== 'string' || id.trim() === '') {
-        logSafeDB(`${operationName} Invalid ID provided`, { id }, 'warn');
+        logDb(`${operationName} Invalid ID provided: "${id}"`, {}, 'warn');
         return null;
     }
     const docRef = doc(db, "bookings", id);
-    logSafeDB(`${operationName} Getting document from Firestore`, { path: docRef.path });
+    logDb(`${operationName} Getting document from Firestore`, { path: docRef.path });
     const docSnap: DocumentSnapshot<DocumentData> = await getDoc(docRef);
     if (docSnap.exists()) {
       const booking = convertTimestampsToISO({ ...docSnap.data(), id: docSnap.id }) as Booking;
-      logSafeDB(`${operationName} Successfully found booking with ID "${id}"`, {});
+      logDb(`${operationName} Successfully found booking with ID "${id}"`, { status: booking.status });
       return booking;
     }
-    logSafeDB(`${operationName} Booking with ID "${id}" NOT FOUND in Firestore.`, {}, 'warn');
+    logDb(`${operationName} Booking with ID "${id}" NOT FOUND in Firestore.`, {}, 'warn');
     return null;
   } catch (error: any) {
-    const errorMessage = `${operationName} Error finding booking by ID "${id}" in Firestore: "${error.message}" (Code: ${error.code || 'N/A'})`;
+    const fbErrorCode = error.code;
+    const errorMessage = `${operationName} Error finding booking by ID "${id}" in Firestore: "${error.message}" (Code: ${fbErrorCode || 'N/A'})`;
     console.error(errorMessage, error.stack?.substring(0, 500));
+    if (fbErrorCode === 'permission-denied') {
+        throw new Error(`Firestore Permission Denied: Cannot read booking with ID ${id}. Check Firestore rules. (Code: ${fbErrorCode})`);
+    }
     throw new Error(errorMessage);
   }
 }
 
 export async function updateBookingInFirestore(id: string, updates: Partial<Booking>): Promise<boolean> {
   const operationName = "[updateBookingInFirestore]";
-  logSafeDB(`${operationName} Attempting to update booking with ID`, { id, updateKeys: Object.keys(updates) });
+  logDb(`${operationName} Attempting to update booking with ID: "${id}"`, { updateKeys: Object.keys(updates) });
   if (!firebaseInitializedCorrectly || !db) {
     const errorDetail = firebaseInitializationError || "DB instance is null or firebaseInitializedCorrectly is false.";
     const errorMessage = `${operationName} FATAL: Firestore is not initialized. Cannot update booking. ID: "${id}". Detail: ${errorDetail}`;
@@ -263,86 +268,82 @@ export async function updateBookingInFirestore(id: string, updates: Partial<Book
   }
   try {
     const docRef = doc(db, "bookings", id);
-    const dataToUpdate = convertDatesToTimestamps({
+    const dataToUpdateWithAppTimestamp = { // Ensure all updates use app-generated server timestamp
         ...updates,
         updatedAt: Timestamp.now(), 
+    };
+    const dataToSave = convertDatesToTimestamps(dataToUpdateWithAppTimestamp);
+    
+    logDb(`${operationName} Using runTransaction for update on booking ID: "${id}"`, { dataToSaveKeys: Object.keys(dataToSave).slice(0,10) });
+    await runTransaction(db, async (transaction) => {
+        const currentBookingDoc = await transaction.get(docRef);
+        if (!currentBookingDoc.exists()) {
+            logDb(`${operationName} Document with ID "${id}" not found for transaction update.`, {}, 'error');
+            throw new Error(`Dokument mit ID ${id} nicht gefunden für Transaktions-Update. (Code: UBF-DNE)`);
+        }
+        
+        const currentBookingData = currentBookingDoc.data() as Booking;
+        let mergedGuestData = { ...(currentBookingData.guestSubmittedData || { lastCompletedStep: -1 }) };
+
+        if (dataToSave.guestSubmittedData && typeof dataToSave.guestSubmittedData === 'object') {
+            logDb(`${operationName} Merging guestSubmittedData for booking ID: "${id}"`, { newKeys: Object.keys(dataToSave.guestSubmittedData) });
+            mergedGuestData = {
+                ...mergedGuestData,
+                ...dataToSave.guestSubmittedData,
+            };
+            // Ensure mitreisende array is handled correctly (overwrite or merge based on needs)
+            // Current logic simply overwrites if `dataToSave.guestSubmittedData.mitreisende` is present
+            if (dataToSave.guestSubmittedData.mitreisende !== undefined) {
+                mergedGuestData.mitreisende = dataToSave.guestSubmittedData.mitreisende;
+            }
+        }
+        
+        const finalUpdatesForTransaction = {
+            ...dataToSave, // Contains other top-level updates and updatedAt
+            guestSubmittedData: mergedGuestData,
+        };
+        transaction.update(docRef, finalUpdatesForTransaction);
+        logDb(`${operationName} Transactional update for booking ID "${id}" prepared.`, { finalUpdateKeys: Object.keys(finalUpdatesForTransaction).slice(0,10) });
     });
     
-    // Smart merging of guestSubmittedData to avoid overwriting sub-fields unintentionally
-    if (updates.guestSubmittedData && typeof updates.guestSubmittedData === 'object') {
-        logSafeDB(`${operationName} guestSubmittedData is part of updates. Merging with transaction.`, { bookingId: id });
-        await runTransaction(db, async (transaction) => {
-            const currentBookingDoc = await transaction.get(docRef);
-            if (!currentBookingDoc.exists()) {
-                throw new Error(`Dokument mit ID ${id} nicht gefunden für Transaktions-Update.`);
-            }
-            const currentBookingData = currentBookingDoc.data() as Booking;
-            const currentGuestData = currentBookingData.guestSubmittedData || { lastCompletedStep: -1 };
-            
-            const newGuestDataUpdates = dataToUpdate.guestSubmittedData;
-
-            // Merge mitreisende array specifically if present in updates
-            let mergedMitreisende = currentGuestData.mitreisende || [];
-            if (newGuestDataUpdates.mitreisende && Array.isArray(newGuestDataUpdates.mitreisende)) {
-                // This will overwrite the entire mitreisende array. If fine-grained merge is needed, more complex logic is required.
-                mergedMitreisende = newGuestDataUpdates.mitreisende;
-            }
-            
-            const mergedGuestData = {
-                ...currentGuestData,
-                ...newGuestDataUpdates,
-                mitreisende: mergedMitreisende, // Ensure mitreisende is correctly merged/overwritten
-            };
-            
-            const finalUpdatesForTransaction = {
-                ...dataToUpdate, // Contains other top-level updates and updatedAt
-                guestSubmittedData: mergedGuestData,
-            };
-            transaction.update(docRef, finalUpdatesForTransaction);
-            logSafeDB(`${operationName} Transactional update for guestSubmittedData prepared.`, { keys: Object.keys(finalUpdatesForTransaction) });
-        });
-        logSafeDB(`${operationName} Transactional update successful for booking ID "${id}".`, {});
-
-    } else {
-        // If guestSubmittedData is not part of the update or not an object, proceed with normal update
-        logSafeDB(`${operationName} Updating document in Firestore (non-transactional for guestSubmittedData or no guestSubmittedData in update).`, { path: docRef.path, updateKeys: Object.keys(dataToUpdate) });
-        await updateDoc(docRef, dataToUpdate);
-    }
-    
-    logSafeDB(`${operationName} Booking with ID "${id}" updated successfully in Firestore.`, {});
+    logDb(`${operationName} Booking with ID "${id}" updated successfully via transaction in Firestore.`, {});
     return true;
   } catch (error: any) {
-    const errorMessage = `${operationName} Error updating booking with ID "${id}" in Firestore: "${error.message}" (Code: ${error.code || 'N/A'})`;
+    const fbErrorCode = error.code;
+    const errorMessage = `${operationName} Error updating booking with ID "${id}" in Firestore: "${error.message}" (Code: ${fbErrorCode || 'N/A'})`;
     console.error(errorMessage, error.stack?.substring(0, 500));
+    if (fbErrorCode === 'permission-denied') {
+        throw new Error(`Firestore Permission Denied: Cannot update booking with ID ${id}. Check Firestore rules. (Code: ${fbErrorCode})`);
+    }
     throw new Error(errorMessage);
   }
 }
 
-export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<{ success: boolean; message: string }> {
+export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<{ success: boolean; message: string, successfulDeletes: number, failedDeletes: number }> {
   const operationName = "[deleteBookingsFromFirestoreByIds]";
   let successfulDeletes = 0;
   let failedDeletes = 0;
   const errorMessagesAccumulator: string[] = [];
 
-  logSafeDB(`${operationName} Attempting to delete bookings from Firestore.`, { count: ids.length, ids });
+  logDb(`${operationName} Attempting to delete ${ids.length} bookings from Firestore.`, { ids });
 
   if (!firebaseInitializedCorrectly || !db || !storage) {
     const errorDetail = firebaseInitializationError || "DB/Storage instance is null or firebaseInitializedCorrectly is false.";
     const initErrorMsg = `${operationName} FATAL: Firebase not initialized. Cannot delete. Detail: ${errorDetail}`;
     console.error(initErrorMsg);
-    return { success: false, message: initErrorMsg };
+    return { success: false, message: initErrorMsg, successfulDeletes, failedDeletes };
   }
 
   if (!Array.isArray(ids) || ids.length === 0) {
-    return { success: true, message: "Keine IDs zum Löschen angegeben." };
+    return { success: true, message: "Keine IDs zum Löschen angegeben.", successfulDeletes, failedDeletes };
   }
 
   const batch = writeBatch(db);
-  const fileDeletionPromises: Promise<void>[] = [];
+  const fileDeletionPromises: Promise<{url: string, status: 'fulfilled' | 'rejected', reason?: any}>[] = [];
 
   for (const id of ids) {
     if (typeof id !== 'string' || id.trim() === '') {
-      logSafeDB(`${operationName} Skipping invalid ID for deletion`, { id }, 'warn');
+      logDb(`${operationName} Skipping invalid ID for deletion: "${id}"`, {}, 'warn');
       failedDeletes++;
       errorMessagesAccumulator.push(`ID "${id}" ist ungültig.`);
       continue;
@@ -350,7 +351,7 @@ export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<{
 
     const docRef = doc(db, "bookings", id);
     try {
-      logSafeDB(`${operationName} [ID: ${id}] Fetching booking to identify associated files...`, {});
+      logDb(`${operationName} [ID: ${id}] Fetching booking to identify associated files...`, {});
       const bookingDocSnap: DocumentSnapshot<DocumentData> = await getDoc(docRef);
 
       if (bookingDocSnap.exists()) {
@@ -370,37 +371,38 @@ export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<{
           }
         }
 
-        logSafeDB(`${operationName} [ID: ${id}] Found ${urlsToDelete.length} potential file URLs to delete from Storage.`, { urls: urlsToDelete.map(u => u.substring(u.lastIndexOf('/')+1)) });
+        logDb(`${operationName} [ID: ${id}] Found ${urlsToDelete.length} potential file URLs to delete from Storage.`, { urlsPreview: urlsToDelete.map(u => u.substring(u.lastIndexOf('/')+1)).slice(0,3) });
         for (const url of urlsToDelete) {
           if (url && typeof url === 'string' && url.startsWith("https://firebasestorage.googleapis.com")) {
-            fileDeletionPromises.push(
-              (async () => {
-                try {
-                  const fileRef = storageRefFB(storage, url); 
-                  await deleteObject(fileRef);
-                  logSafeDB(`${operationName} [ID: ${id}] Deleted file from Storage`, { fileUrl: url.substring(url.lastIndexOf('/')+1) });
-                } catch (fileError: any) {
-                  if (String(fileError.code).includes('storage/object-not-found')) { // Firebase Storage error codes are strings
-                    logSafeDB(`${operationName} [ID: ${id}] File not found in Storage, skipping deletion`, { fileUrl: url.substring(url.lastIndexOf('/')+1) }, 'warn');
-                  } else {
-                    const fileErrorMsg = `${operationName} [ID: ${id}] Failed to delete file ${url.substring(url.lastIndexOf('/')+1)} from Storage: ${fileError.message} (Code: ${fileError.code || 'N/A'})`;
-                    console.error(fileErrorMsg);
-                    errorMessagesAccumulator.push(`Fehler beim Löschen von Datei ${url.substring(url.lastIndexOf('/')+1)} für Buchung ${id}.`);
-                  }
+            const promise = (async () => {
+                const fileRef = storageRefFB(storage, url); 
+                await deleteObject(fileRef);
+                logDb(`${operationName} [ID: ${id}] Deleted file from Storage`, { fileUrl: url.substring(url.lastIndexOf('/')+1) });
+                return {url, status: 'fulfilled' as const};
+            })().catch(fileError => {
+                const fbFileErrorCode = (fileError as any).code;
+                if (String(fbFileErrorCode).includes('storage/object-not-found')) {
+                  logDb(`${operationName} [ID: ${id}] File not found in Storage, skipping deletion: ${url.substring(url.lastIndexOf('/')+1)}`, {}, 'warn');
+                } else {
+                  const fileErrorMsg = `Failed to delete file ${url.substring(url.lastIndexOf('/')+1)} for booking ${id}: ${(fileError as Error).message} (Code: ${fbFileErrorCode || 'N/A'})`;
+                  logDb(`${operationName} [ID: ${id}] ${fileErrorMsg}`, {}, 'error');
+                  errorMessagesAccumulator.push(fileErrorMsg);
                 }
-              })()
-            );
+                return {url, status: 'rejected' as const, reason: fileError};
+            });
+            fileDeletionPromises.push(promise);
           }
         }
         batch.delete(docRef);
-        logSafeDB(`${operationName} [ID: ${id}] Firestore document added to batch delete.`, {});
+        logDb(`${operationName} [ID: ${id}] Firestore document added to batch delete.`, {});
       } else {
-        logSafeDB(`${operationName} [ID: ${id}] Document not found in Firestore. Cannot delete.`, {}, 'warn');
+        logDb(`${operationName} [ID: ${id}] Document not found in Firestore. Cannot delete.`, {}, 'warn');
         failedDeletes++;
         errorMessagesAccumulator.push(`Buchung mit ID "${id}" nicht gefunden.`);
       }
     } catch (error: any) {
-      const errorMsg = `${operationName} [ID: ${id}] Error processing for deletion: ${error.message} (Code: ${error.code || 'N/A'})`;
+      const fbErrorCode = error.code;
+      const errorMsg = `${operationName} [ID: ${id}] Error processing for deletion: ${error.message} (Code: ${fbErrorCode || 'N/A'})`;
       console.error(errorMsg);
       failedDeletes++;
       errorMessagesAccumulator.push(`Fehler beim Verarbeiten von ID "${id}": ${error.message}`);
@@ -409,54 +411,48 @@ export async function deleteBookingsFromFirestoreByIds(ids: string[]): Promise<{
 
   try {
     if (fileDeletionPromises.length > 0) {
-      logSafeDB(`${operationName} Waiting for ${fileDeletionPromises.length} file deletion promises to settle...`, {});
-      const settledPromises = await Promise.allSettled(fileDeletionPromises);
-      settledPromises.forEach((result, index) => {
-          if (result.status === 'rejected') {
-              console.error(`${operationName} A file deletion promise was rejected:`, result.reason);
-          }
-      });
-      logSafeDB(`${operationName} All file deletion attempts completed.`, {});
+      logDb(`${operationName} Waiting for ${fileDeletionPromises.length} file deletion promises to settle...`, {});
+      await Promise.allSettled(fileDeletionPromises); // Error messages are already pushed to accumulator
+      logDb(`${operationName} All file deletion attempts completed.`, {});
     }
 
-    const docsInBatch = ids.length - failedDeletes;
+    const docsInBatch = ids.length - failedDeletes - errorMessagesAccumulator.filter(msg => msg.includes("nicht gefunden")).length; // More accurate count of docs to be deleted in batch
     if (docsInBatch > 0) {
-      logSafeDB(`${operationName} Committing batch delete for ${docsInBatch} Firestore documents.`, {});
+      logDb(`${operationName} Committing batch delete for ${docsInBatch} Firestore documents.`, {});
       await batch.commit();
       successfulDeletes = docsInBatch; 
-      logSafeDB(`${operationName} Batch commit successful for deletion of ${successfulDeletes} booking(s).`, {});
+      logDb(`${operationName} Batch commit successful for deletion of ${successfulDeletes} booking(s).`, {});
     } else if (ids.length > 0) {
-      logSafeDB(`${operationName} No documents were eligible for batch deletion (all failed pre-check or not found).`, {}, 'warn');
-    } else { // ids.length === 0, already handled
+      logDb(`${operationName} No documents were eligible for batch deletion (all failed pre-check or not found).`, {}, 'warn');
     }
     
     let message = "";
     if (successfulDeletes > 0) message += `${successfulDeletes} Buchung(en) erfolgreich gelöscht. `;
-    if (failedDeletes > 0 && ids.length > 0) { // Only report failedDeletes if there were IDs to process
+    if (failedDeletes > 0 && ids.length > 0) {
          message += `${failedDeletes} Buchung(en) konnten nicht in Firestore gefunden oder initial verarbeitet werden. `;
     }
     if (errorMessagesAccumulator.length > 0) {
-        message += `Zusätzliche Fehler (meist bei Dateilöschungen): ${errorMessagesAccumulator.join('; ')}`;
+        message += `Fehler bei Dateilöschungen: ${errorMessagesAccumulator.join('; ')}`;
     }
     
-    if (successfulDeletes === 0 && failedDeletes === 0 && ids.length > 0 && errorMessagesAccumulator.length === 0) {
-        message = "Keine der ausgewählten Buchungen konnte gefunden oder verarbeitet werden.";
-    }
-    if (ids.length === 0 && successfulDeletes === 0 && failedDeletes === 0) {
-        message = "Keine Buchungen zum Löschen ausgewählt."; // Should be caught by action layer
-    }
-
-    return { success: successfulDeletes > 0 && errorMessagesAccumulator.length === 0 && failedDeletes === 0, message: message || "Löschvorgang abgeschlossen." };
+    const overallSuccess = successfulDeletes > 0 && failedDeletes === 0 && errorMessagesAccumulator.length === 0;
+    return { 
+        success: overallSuccess, 
+        message: message || (ids.length === 0 ? "Keine IDs zum Löschen angegeben." : "Löschvorgang abgeschlossen."),
+        successfulDeletes,
+        failedDeletes
+    };
 
   } catch (batchCommitError: any) {
-    const errorMessage = `${operationName} Error committing batch delete to Firestore: ${batchCommitError.message} (Code: ${batchCommitError.code || 'N/A'})`;
+    const fbErrorCode = batchCommitError.code;
+    const errorMessage = `${operationName} Error committing batch delete to Firestore: ${batchCommitError.message} (Code: ${fbErrorCode || 'N/A'})`;
     console.error(errorMessage, batchCommitError.stack?.substring(0,500));
     errorMessagesAccumulator.push(`Fehler beim Bestätigen der Löschung in Firestore: ${batchCommitError.message}`);
     return { 
         success: false, 
-        message: `${errorMessage}. ${errorMessagesAccumulator.join('; ')}`
+        message: `${errorMessage}. ${errorMessagesAccumulator.join('; ')}`,
+        successfulDeletes,
+        failedDeletes
     };
   }
 }
-
-    
