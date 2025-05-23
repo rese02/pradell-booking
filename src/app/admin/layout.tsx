@@ -17,7 +17,6 @@ import { AdminSidebarNav } from "@/components/admin/AdminSidebarNav";
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Settings } from 'lucide-react';
-// PradellLogo wird nicht mehr direkt hier verwendet, sondern nur der Text
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -32,9 +31,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar variant="sidebar" collapsible="icon" side="left" className="border-r border-border/50 shadow-md">
-        <SidebarHeader className="p-4 flex items-center justify-between group-data-[collapsible=icon]:justify-center border-b border-border/30 h-16"> {/* Added h-16 for consistent header height */}
+        <SidebarHeader className="p-4 flex flex-col items-center justify-center gap-2 border-b border-border/30 h-auto group-data-[collapsible=icon]:h-16 group-data-[collapsible=icon]:justify-center">
           {/* Text "Booking System Pradell" only visible when sidebar is expanded */}
-          <div className="group-data-[collapsible=icon]:hidden">
+          <div className="group-data-[collapsible=icon]:hidden text-center">
             <span className="text-lg font-semibold text-foreground">Booking System Pradell</span>
           </div>
           <SidebarTrigger/>
