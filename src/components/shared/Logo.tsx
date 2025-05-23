@@ -9,14 +9,14 @@ interface LogoProps {
 
 export function Logo({ className }: LogoProps) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn("flex items-center justify-center gap-2", className)}> {/* Added justify-center for good measure if parent doesn't have text-center */}
       <Image
         src={logoImage}
         alt="Gastfreund Pro Logo"
-        width={150} 
-        height={30} 
+        width={50} // Ein Drittel von 150
+        height={10} // Ein Drittel von 30
         priority 
-        className="h-auto"
+        className="h-auto" // Behält das Seitenverhältnis bei, falls width/height anders skaliert werden
         data-ai-hint="company logo"
       />
     </div>
