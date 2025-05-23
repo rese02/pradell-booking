@@ -17,7 +17,7 @@ import { AdminSidebarNav } from "@/components/admin/AdminSidebarNav";
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Settings } from 'lucide-react';
-import { PradellLogo } from '@/components/shared/PradellLogo'; // Import PradellLogo
+// PradellLogo wird nicht mehr direkt hier verwendet, sondern nur der Text
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -32,10 +32,10 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <Sidebar variant="sidebar" collapsible="icon" side="left" className="border-r border-border/50 shadow-md">
-        <SidebarHeader className="p-4 flex items-center justify-between group-data-[collapsible=icon]:justify-center border-b border-border/30">
-           {/* PradellLogo only visible when sidebar is expanded */}
+        <SidebarHeader className="p-4 flex items-center justify-between group-data-[collapsible=icon]:justify-center border-b border-border/30 h-16"> {/* Added h-16 for consistent header height */}
+          {/* Text "Booking System Pradell" only visible when sidebar is expanded */}
           <div className="group-data-[collapsible=icon]:hidden">
-            <PradellLogo />
+            <span className="text-lg font-semibold text-foreground">Booking System Pradell</span>
           </div>
           <SidebarTrigger/>
         </SidebarHeader>
@@ -53,7 +53,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       <SidebarInset>
         <AdminHeader />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-background min-h-[calc(100vh-4rem)]"> {/* Adjusted bg */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 bg-muted/20 min-h-[calc(100vh-4rem)]"> {/* Adjusted bg and consistent with AdminHeader height */}
           {children}
         </main>
       </SidebarInset>
