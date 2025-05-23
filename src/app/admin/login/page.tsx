@@ -112,7 +112,7 @@ export default function AdminLoginPage() {
       </div>
 
       <div 
-        className="hidden md:flex md:w-3/5 lg:w-2/3 flex-col justify-center items-center p-12 text-center bg-gradient-to-br from-primary/80 via-primary to-primary-darker text-primary-foreground"
+        className="hidden md:flex md:w-3/5 lg:w-2/3 flex-col justify-center items-center p-12 text-center bg-gradient-to-b from-primary via-primary/90 to-primary-darker text-primary-foreground"
       >
         <LibraryBig className="h-28 w-28 mb-8 opacity-75" data-ai-hint="building document"/>
         <h2 className="text-4xl font-bold mb-4">Willkommen zurück!</h2>

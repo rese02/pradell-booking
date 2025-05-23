@@ -13,8 +13,8 @@ export function Logo({ className }: LogoProps) {
       <Image
         src={logoImage}
         alt="Gastfreund Pro Logo"
-        width={50} // Ein Drittel von 150
-        height={10} // Ein Drittel von 30
+        width={100} // Doubled from 50
+        height={20} // Doubled from 10
         priority 
         className="h-auto" // Behält das Seitenverhältnis bei, falls width/height anders skaliert werden
         data-ai-hint="company logo"
