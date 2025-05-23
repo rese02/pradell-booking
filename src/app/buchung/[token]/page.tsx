@@ -22,7 +22,7 @@ function logSafePage(context: string, data: any, level: 'info' | 'warn' | 'error
     } catch (e) {
         simplifiedData = "[Log data could not be stringified]";
     }
-    const logMessage = `${pageName} [${new Date().toISOString()}] ${context} ${simplifiedData.length > maxLogLength ? simplifiedData.substring(0, maxLogLength) + `... [LOG_DATA_TRUNCATED_AT_${maxLogLength}_CHARS]` : simplifiedData}`; // Removed the trailing backslash
+    const logMessage = `${pageName} [${new Date().toISOString()}] ${context} ${simplifiedData.length > maxLogLength ? simplifiedData.substring(0, maxLogLength) + `... [LOG_DATA_TRUNCATED_AT_${maxLogLength}_CHARS]` : simplifiedData}`; 
 
     if (level === 'error') console.error(logMessage);
     else if (level === 'warn') console.warn(logMessage);
@@ -59,14 +59,16 @@ async function getBookingByToken(token: string): Promise<Booking | null> {
 }
 
 export default async function GuestBookingPage({ params }: { params: { token: string } }) {
-  const tokenFromParams = params.token;
+  const tokenFromParams = params.token; // Assign early
   const operationName = "[Server GuestBookingPage]";
-  console.log(`${operationName} Rendering page for token: "${tokenFromParams}" at ${new Date().toISOString()}`);
 
   let booking: Booking | null = null;
   let fetchError: string | null = null;
 
+  console.log(`${operationName} Page invoked for token: "${tokenFromParams}" at ${new Date().toISOString()}`); // Log token usage after assignment
+
   try {
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] getBookingByToken call starting.`, {});
     booking = await getBookingByToken(tokenFromParams);
     logSafePage(`${operationName} [Token: ${tokenFromParams}] getBookingByToken call completed.`, { bookingFound: !!booking, status: booking?.status, guestFirstName: booking?.guestFirstName });
   } catch (error: any) {
@@ -91,7 +93,7 @@ export default async function GuestBookingPage({ params }: { params: { token: st
   }
 
   if (!booking) {
-    logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking is null after getBookingByToken. Rendering "not found" card.`, {}, 'warn'); // Changed level to warn as not finding a booking is not always a critical error, but indicates invalid link.
+    logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking is null after getBookingByToken. Rendering "not found" card.`, {}, 'warn'); 
      return (
       <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
         <CardHeader className="items-center text-center">
@@ -108,11 +110,10 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
-  // Check booking status and submitted data to decide what to display
   const isBookingConfirmed = booking.status === "Confirmed" && booking.guestSubmittedData?.submittedAt;
   const isBookingCancelled = booking.status === "Cancelled";
-  const isPendingGuestInfo = booking.status === "Pending Guest Information";
-  const guestDataSubmitted = !!booking.guestSubmittedData?.submittedAt; // Check if submittedAt exists
+  // const isPendingGuestInfo = booking.status === "Pending Guest Information"; // Not strictly needed for this logic block
+  // const guestDataSubmitted = !!booking.guestSubmittedData?.submittedAt; // Already covered by isBookingConfirmed effectively
 
   logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking data retrieved. Status: ${booking.status}. GuestSubmittedData submittedAt: ${booking.guestSubmittedData?.submittedAt || 'N/A'}.`,
       {
@@ -120,8 +121,8 @@ export default async function GuestBookingPage({ params }: { params: { token: st
           submittedAt: booking.guestSubmittedData?.submittedAt,
           isBookingConfirmed: isBookingConfirmed,
           isBookingCancelled: isBookingCancelled,
-          isPendingGuestInfo: isPendingGuestInfo,
-          guestDataSubmitted: guestDataSubmitted
+          //isPendingGuestInfo: isPendingGuestInfo,
+          //guestDataSubmitted: guestDataSubmitted
       }
   );
 
@@ -161,7 +162,6 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
   
-  // Simplified condition: show form if status is "Pending Guest Information" AND data not yet submitted.
   const shouldShowForm = booking.status === "Pending Guest Information" && !booking.guestSubmittedData?.submittedAt;
   
   logSafePage(`${operationName} [Token: ${tokenFromParams}] Evaluation for showing form:`, { 
@@ -177,7 +177,6 @@ export default async function GuestBookingPage({ params }: { params: { token: st
     );
   }
 
-  // Fallback for other statuses or unexpected conditions
   logSafePage(`${operationName} [Token: ${tokenFromParams}] Booking found, but status is "${booking.status}" which is not handled by specific UI or form should not be shown. Displaying generic status message.`, {}, 'warn');
   return (
     <Card className="w-full max-w-lg mx-auto shadow-lg card-modern">
@@ -195,3 +194,4 @@ export default async function GuestBookingPage({ params }: { params: { token: st
       </Card>
   );
 }
+
