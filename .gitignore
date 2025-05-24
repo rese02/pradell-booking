@@ -43,3 +43,6 @@ next-env.d.ts
 # firebase
 firebase-debug.log
 firestore-debug.log
+
+serviceAccountKey.json
+gastfreund-pro-firebase-adminsdk-fbsvc-e996e291a2.json
